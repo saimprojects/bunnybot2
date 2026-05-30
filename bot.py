@@ -1051,9 +1051,9 @@ async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             "➕ *Add Product*\n\n"
             "Stock field nahi dena. Stock auto `0` se start hoga.\n\n"
             "Format:\n"
-            "`Name | Duration | Price | Rating | Description | feature1, feature2 | Note`\n\n"
+            "`Name | Duration | Price | Rating | Description | feature1, feature2 | Note | Sticker Emoji ID`\n\n"
             "Example:\n"
-            "`Netflix Premium | 1 Month | 3.5 | 4.8 | Premium account | 4K, Private | No password change`",
+            "`Netflix Premium | 1 Month | 3.5 | 4.8 | Premium account | 4K, Private | No password change | 5456140674028019486`",
             reply_markup=utils.admin_cancel_keyboard(),
             parse_mode='Markdown'
         )
@@ -1064,9 +1064,9 @@ async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             "➕ *Bulk Add Products*\n\n"
             "Stock field nahi dena. Har product stock `0` se start hoga.\n\n"
             "Format:\n"
-            "`[Name | Duration | Price | Rating | Description | feature1, feature2 | Note] [Name2 | Duration | Price | Rating | Description | feature1, feature2 | Note]`\n\n"
+            "`[Name | Duration | Price | Rating | Description | feature1, feature2 | Note | Sticker Emoji ID] [Name2 | Duration | Price | Rating | Description | feature1, feature2 | Note | Sticker Emoji ID]`\n\n"
             "Example:\n"
-            "`[Netflix | 1 Month | 3.5 | 4.8 | Premium account | 4K, Private | No password change] [Spotify | 1 Month | 2 | 4.7 | Music premium | No ads, HQ | Warranty 7 days]`",
+            "`[Netflix | 1 Month | 3.5 | 4.8 | Premium account | 4K, Private | No password change | 5456140674028019486] [Spotify | 1 Month | 2 | 4.7 | Music premium | No ads, HQ | Warranty 7 days | 5409048419211682843]`",
             reply_markup=utils.admin_cancel_keyboard(),
             parse_mode='Markdown'
         )
@@ -1161,10 +1161,10 @@ async def handle_admin_add_product(update: Update, context: ContextTypes.DEFAULT
     try:
         data = update.message.text.split(' | ')
 
-        if len(data) != 7:
+        if len(data) != 8:
             await update.message.reply_text(
-                "❌ Invalid format. Send 7 fields:\n"
-                "`Name | Duration | Price | Rating | Description | features | Note`",
+                "❌ Invalid format. Send 8 fields:\n"
+                "`Name | Duration | Price | Rating | Description | features | Note | Sticker Emoji ID`",
                 parse_mode='Markdown'
             )
             return ADMIN_ADD_PRODUCT
@@ -1176,7 +1176,8 @@ async def handle_admin_add_product(update: Update, context: ContextTypes.DEFAULT
             float(data[3]),
             data[4],
             data[5],
-            data[6]
+            data[6],
+            data[7]
         )
 
         await update.message.reply_text(
@@ -1414,9 +1415,9 @@ async def cmd_addproduct_data(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         data = update.message.text.replace('/addproduct_data ', '').split(' | ')
 
-        if len(data) != 7:
+        if len(data) != 8:
             await update.message.reply_text(
-                "Usage: `/addproduct_data Name | Duration | Price | Rating | Description | features | Note`",
+                "Usage: `/addproduct_data Name | Duration | Price | Rating | Description | features | Note | Sticker Emoji ID`",
                 parse_mode='Markdown'
             )
             return
@@ -1428,7 +1429,8 @@ async def cmd_addproduct_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             float(data[3]),
             data[4],
             data[5],
-            data[6]
+            data[6],
+            data[7]
         )
 
         await update.message.reply_text(msg, parse_mode='Markdown')

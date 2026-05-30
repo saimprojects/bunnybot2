@@ -92,6 +92,7 @@ def products_list_keyboard(products):
         product_id = p[0]
         product_name = p[1]
         stock = p[4]
+        product_emoji_id = p[9] if len(p) > 9 and p[9] else None
 
         if stock and stock > 0:
             text = f"{product_name} — Stock: {stock}"
@@ -100,11 +101,17 @@ def products_list_keyboard(products):
             text = f"{product_name} ❌ OUT OF STOCK"
             style = "danger"
 
-        buttons.append(btn(text, callback_data=f'product_{product_id}', style=style))
+        buttons.append(
+            btn(
+                text,
+                callback_data=f'product_{product_id}',
+                style=style,
+                emoji_id=product_emoji_id
+            )
+        )
 
     buttons.append(back_btn("Back to Main Menu", callback_data='main_menu'))
     return build_menu(buttons, n_cols=1)
-
 
 def product_details_keyboard():
     buttons = [

@@ -65,13 +65,13 @@ def parse_stock_bulk_format(text):
 def parse_product_block(block):
     fields = [x.strip() for x in block.split(" | ")]
 
-    if len(fields) != 7:
+    if len(fields) != 8:
         fields = [x.strip() for x in block.split("|")]
 
-    if len(fields) != 7:
+    if len(fields) != 8:
         raise ValueError(
-            "Product format must have 7 fields: "
-            "Name | Duration | Price | Rating | Description | features | Note"
+            "Product format must have 8 fields: "
+            "Name | Duration | Price | Rating | Description | features | Note | Sticker Emoji ID"
         )
 
     features = [f.strip() for f in fields[5].split(",") if f.strip()]
@@ -85,6 +85,7 @@ def parse_product_block(block):
         "description": fields[4],
         "features": features,
         "note": fields[6],
+        "emoji_id": fields[7],
     }
 
 
@@ -97,15 +98,25 @@ def parse_bulk_products_format(text):
     return [parse_product_block(block) for block in blocks]
 
 
-def add_product_admin(name, duration, price, rating, description, features_str, note):
+def add_product_admin(name, duration, price, rating, description, features_str, note, emoji_id):
     try:
         try:
             features = json.loads(features_str) if features_str else []
         except Exception:
             features = [f.strip() for f in features_str.split(",") if f.strip()]
 
-        database.add_product(name, duration, price, 0, rating, description, features, note)
-        return f"✅ Product *{name}* added successfully with stock `0`."
+        database.add_product(
+            name,
+            duration,
+            price,
+            0,
+            rating,
+            description,
+            features,
+            note,
+            emoji_id
+        )
+        return f"✅ Product *{name}* added successfully with stock `0` and sticker ID `{emoji_id}`."
     except Exception as e:
         return f"❌ Error adding product: {e}"
 
@@ -123,7 +134,8 @@ def add_bulk_products_admin(products_data):
                 p["rating"],
                 p["description"],
                 p["features"],
-                p["note"]
+                p["note"],
+                p.get("emoji_id", "")
             )
             added_count += 1
 
@@ -182,6 +194,7 @@ def get_all_products_admin():
             f"💰 Price: {p[3]} USDT\n"
             f"📦 Stock: {p[4]} — {stock_status}\n"
             f"⭐ Rating: {p[5]}/5\n"
+            f"🧩 Sticker ID: `{p[9] if len(p) > 9 and p[9] else 'None'}`\n"
             f"━━━━━━━━━━━━━━━━━━\n"
         )
 

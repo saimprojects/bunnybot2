@@ -31,7 +31,8 @@ def init_db():
             rating REAL,
             description TEXT,
             features TEXT,
-            note TEXT
+            note TEXT,
+            emoji_id TEXT
         )
     ''')
 
@@ -90,6 +91,11 @@ def init_db():
     columns = [row[1] for row in cursor.fetchall()]
     if "item_data" not in columns:
         cursor.execute("ALTER TABLE unsold_items ADD COLUMN item_data TEXT")
+
+    cursor.execute("PRAGMA table_info(products)")
+    product_columns = [row[1] for row in cursor.fetchall()]
+    if "emoji_id" not in product_columns:
+        cursor.execute("ALTER TABLE products ADD COLUMN emoji_id TEXT")
 
     conn.commit()
     conn.close()
@@ -154,16 +160,26 @@ def get_all_products():
     return products
 
 
-def add_product(name, duration, price, stock, rating, description, features, note):
+def add_product(name, duration, price, stock, rating, description, features, note, emoji_id=""):
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
     cursor.execute(
         '''
         INSERT INTO products
-        (name, duration, price, stock, rating, description, features, note)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (name, duration, price, stock, rating, description, features, note, emoji_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''',
-        (name, duration, price, stock, rating, description, json.dumps(features), note)
+        (
+            name,
+            duration,
+            price,
+            stock,
+            rating,
+            description,
+            json.dumps(features),
+            note,
+            str(emoji_id) if emoji_id else ""
+        )
     )
     conn.commit()
     conn.close()
