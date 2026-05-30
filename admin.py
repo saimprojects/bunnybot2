@@ -5,7 +5,10 @@ import re
 
 
 def is_admin(user_id):
-    return str(user_id) == str(config.ADMIN_ID)
+    try:
+        return int(user_id) in config.ADMIN_IDS
+    except Exception:
+        return False
 
 
 def _extract_product_stock_sections(text):

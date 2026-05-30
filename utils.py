@@ -3,12 +3,24 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 EMOJIS = {
+    # /start main menu buttons
     "products": "5456140674028019486",
     "purchase_history": "5210956306952758910",
     "profile": "5253742260054409879",
     "support": "5443038326535759644",
     "wallet": "5409048419211682843",
     "order_details": "5282843764451195532",
+
+    # wallet buttons
+    "deposit": "5397916757333654639",
+    "withdraw": "5402186569006210455",
+
+    # universal back button
+    "back": "5416117059207572332",
+
+    # support buttons
+    "faq": "5314504236132747481",
+    "announcement": "5395695537687123235",
 }
 
 
@@ -38,6 +50,15 @@ def btn(text, callback_data=None, url=None, style="default", emoji_id=None):
     )
 
 
+def back_btn(text="Back", callback_data="main_menu", style="primary"):
+    return btn(
+        text,
+        callback_data=callback_data,
+        style=style,
+        emoji_id=EMOJIS["back"]
+    )
+
+
 def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
     menu = [buttons[i:i + n_cols] for i in range(0, len(buttons), n_cols)]
 
@@ -54,42 +75,12 @@ def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
 
 def main_menu_keyboard():
     buttons = [
-        btn(
-            "Products",
-            callback_data='products',
-            style="success",
-            emoji_id=EMOJIS["products"]
-        ),
-        btn(
-            "Profile",
-            callback_data='profile',
-            style="primary",
-            emoji_id=EMOJIS["profile"]
-        ),
-        btn(
-            "Purchase History",
-            callback_data='purchase_history',
-            style="danger",
-            emoji_id=EMOJIS["purchase_history"]
-        ),
-        btn(
-            "Wallet",
-            callback_data='wallet',
-            style="success",
-            emoji_id=EMOJIS["wallet"]
-        ),
-        btn(
-            "Order Details",
-            callback_data='order_details',
-            style="primary",
-            emoji_id=EMOJIS["order_details"]
-        ),
-        btn(
-            "Support",
-            callback_data='support',
-            style="danger",
-            emoji_id=EMOJIS["support"]
-        ),
+        btn("Products", callback_data='products', style="success", emoji_id=EMOJIS["products"]),
+        btn("Profile", callback_data='profile', style="primary", emoji_id=EMOJIS["profile"]),
+        btn("Purchase History", callback_data='purchase_history', style="danger", emoji_id=EMOJIS["purchase_history"]),
+        btn("Wallet", callback_data='wallet', style="success", emoji_id=EMOJIS["wallet"]),
+        btn("Order Details", callback_data='order_details', style="primary", emoji_id=EMOJIS["order_details"]),
+        btn("Support", callback_data='support', style="danger", emoji_id=EMOJIS["support"]),
     ]
     return build_menu(buttons, n_cols=2)
 
@@ -109,33 +100,22 @@ def products_list_keyboard(products):
             text = f"{product_name} ❌ OUT OF STOCK"
             style = "danger"
 
-        buttons.append(
-            btn(
-                text,
-                callback_data=f'product_{product_id}',
-                style=style,
-                emoji_id=EMOJIS["products"]
-            )
-        )
+        buttons.append(btn(text, callback_data=f'product_{product_id}', style=style))
 
-    buttons.append(
-        btn("🔙 Back to Main Menu", callback_data='main_menu', style="primary")
-    )
+    buttons.append(back_btn("Back to Main Menu", callback_data='main_menu'))
     return build_menu(buttons, n_cols=1)
 
 
 def product_details_keyboard():
     buttons = [
-        btn("Order Now", callback_data='order_now', style="success", emoji_id=EMOJIS["products"]),
-        btn("🔙 Back to Products", callback_data='products', style="danger"),
+        btn("Order Now", callback_data='order_now', style="success"),
+        back_btn("Back to Products", callback_data='products', style="danger"),
     ]
     return build_menu(buttons, n_cols=1)
 
 
 def quantity_selection_keyboard():
-    buttons = [
-        btn("🔙 Back to Product", callback_data='back_to_product_details', style="danger"),
-    ]
+    buttons = [back_btn("Back to Product", callback_data='back_to_product_details', style="danger")]
     return build_menu(buttons, n_cols=1)
 
 
@@ -143,7 +123,7 @@ def payment_method_keyboard():
     buttons = [
         btn("💳 Pay with Binance", callback_data='pay_binance', style="primary"),
         btn("Pay with Wallet", callback_data='pay_wallet', style="success", emoji_id=EMOJIS["wallet"]),
-        btn("🔙 Back to Quantity", callback_data='back_to_quantity', style="danger"),
+        back_btn("Back to Quantity", callback_data='back_to_quantity', style="danger"),
     ]
     return build_menu(buttons, n_cols=1)
 
@@ -165,46 +145,40 @@ def wallet_payment_keyboard():
 
 
 def insufficient_balance_keyboard():
-    buttons = [
-        btn("🔙 Back to Payment", callback_data='back_to_payment_method', style="danger"),
-    ]
+    buttons = [back_btn("Back to Payment", callback_data='back_to_payment_method', style="danger")]
     return build_menu(buttons, n_cols=1)
 
 
 def order_confirmed_keyboard():
     buttons = [
         btn("Order Details", callback_data='order_details', style="primary", emoji_id=EMOJIS["order_details"]),
-        btn("🔙 Back to Main Menu", callback_data='main_menu', style="primary"),
+        back_btn("Back to Main Menu", callback_data='main_menu'),
     ]
     return build_menu(buttons, n_cols=1)
 
 
 def wallet_options_keyboard():
     buttons = [
-        btn("Deposit", callback_data='deposit_wallet', style="success", emoji_id=EMOJIS["wallet"]),
-        btn("💸 Withdraw", callback_data='withdraw_wallet', style="danger"),
+        btn("Deposit", callback_data='deposit_wallet', style="success", emoji_id=EMOJIS["deposit"]),
+        btn("Withdraw", callback_data='withdraw_wallet', style="danger", emoji_id=EMOJIS["withdraw"]),
     ]
-    return build_menu(
-        buttons,
-        n_cols=2,
-        footer_buttons=[btn("🔙 Back", callback_data='main_menu', style="primary")]
-    )
+    return build_menu(buttons, n_cols=2, footer_buttons=[back_btn("Back", callback_data='main_menu')])
 
 
 def deposit_wallet_keyboard():
     buttons = [
         btn("✅ I have sent the payment", callback_data='check_deposit_payment', style="success"),
-        btn("🔙 Back", callback_data='wallet', style="danger"),
+        back_btn("Back", callback_data='wallet', style="danger"),
     ]
     return build_menu(buttons, n_cols=1)
 
 
 def support_keyboard():
     buttons = [
-        btn("❓ FAQ", callback_data='faq', style="primary"),
+        btn("FAQ", callback_data='faq', style="primary", emoji_id=EMOJIS["faq"]),
         btn("Contact Admin", callback_data='contact_admin', style="success", emoji_id=EMOJIS["support"]),
-        btn("🔔 Announcements", url='https://t.me/your_channel', style="primary"),
-        btn("🔙 Back", callback_data='main_menu', style="danger"),
+        btn("Announcements", url='https://t.me/your_channel', style="primary", emoji_id=EMOJIS["announcement"]),
+        back_btn("Back", callback_data='main_menu', style="danger"),
     ]
     return build_menu(buttons, n_cols=1)
 
@@ -215,22 +189,16 @@ def admin_main_keyboard():
     buttons = [
         btn("➕ Add Product", callback_data='admin_add_product', style="success"),
         btn("➕ Bulk Products", callback_data='admin_bulk_add_products', style="success"),
-
         btn("📦 Add Stock/Items", callback_data='admin_add_items', style="primary"),
         btn("💲 Edit Price", callback_data='admin_edit_price', style="primary"),
-
         btn("🔢 Edit Stock", callback_data='admin_edit_stock', style="primary"),
         btn("💰 Add Balance", callback_data='admin_add_balance', style="success"),
-
         btn("✅ Approve Withdrawal", callback_data='admin_approve_withdrawal', style="success"),
         btn("📢 Broadcast", callback_data='admin_broadcast', style="danger"),
-
         btn("🗑️ Delete Product", callback_data='admin_delete_product', style="danger"),
         btn("🔎 Order Details", callback_data='admin_order_details', style="primary"),
-
         btn("📜 View Products", callback_data='admin_view_products', style="primary"),
         btn("📝 All Orders", callback_data='admin_view_all_orders', style="primary"),
-
         btn("💸 Withdrawals", callback_data='admin_withdraw_requests', style="danger"),
         btn("📊 Stats", callback_data='admin_view_stats', style="success"),
     ]
@@ -238,14 +206,10 @@ def admin_main_keyboard():
 
 
 def admin_back_keyboard():
-    buttons = [
-        btn("🔙 Back to Admin Panel", callback_data='admin_panel_back', style="primary"),
-    ]
+    buttons = [back_btn("Back to Admin Panel", callback_data='admin_panel_back')]
     return build_menu(buttons, n_cols=1)
 
 
 def admin_cancel_keyboard():
-    buttons = [
-        btn("❌ Cancel", callback_data='admin_panel_back', style="danger"),
-    ]
+    buttons = [back_btn("Cancel", callback_data='admin_panel_back', style="danger")]
     return build_menu(buttons, n_cols=1)

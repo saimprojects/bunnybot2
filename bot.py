@@ -23,6 +23,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text: str, parse_mode: str = "Markdown"):
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=text,
+                parse_mode=parse_mode
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify admin {admin_id}: {e}")
+
+
 (
     QUANTITY,
     WITHDRAW_AMOUNT,
@@ -531,9 +543,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=utils.wallet_options_keyboard()
         )
 
-        await context.bot.send_message(
-            chat_id=config.ADMIN_ID,
-            text=f"⚠️ User `{user_id}` claims deposit.\nUse: `/addbalance {user_id} <amount>`",
+        await notify_admins(
+            context,
+            f"⚠️ User `{user_id}` claims deposit.\nUse: `/addbalance {user_id} <amount>`",
             parse_mode='Markdown'
         )
         return ConversationHandler.END
@@ -678,9 +690,9 @@ async def handle_withdraw_address(update: Update, context: ContextTypes.DEFAULT_
         reply_markup=utils.main_menu_keyboard()
     )
 
-    await context.bot.send_message(
-        chat_id=config.ADMIN_ID,
-        text=(
+    await notify_admins(
+        context,
+        (
             f"💸 *New Withdrawal*\n\n"
             f"User: `{user_id}`\n"
             f"Amount: {amount} USDT\n"
@@ -697,9 +709,9 @@ async def handle_contact_admin(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.effective_user.id
     username = update.effective_user.username or "Unknown"
 
-    await context.bot.send_message(
-        chat_id=config.ADMIN_ID,
-        text=(
+    await notify_admins(
+        context,
+        (
             f"📩 *Message from User*\n\n"
             f"ID: `{user_id}`\n"
             f"Username: @{username}\n\n"
