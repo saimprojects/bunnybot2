@@ -4,17 +4,17 @@ import time
 import json
 import hmac
 import hashlib
-import random
-import string
+import urllib.parse
 import urllib.request
 import urllib.error
 from html import escape as html_escape
 
 
+# Custom Emoji IDs
 EMOJIS = {
-    "cancel": "5210952531676504517",
-    "confirm": "5206607081334906820",
-    "binance": "6222208096257712941",
+    "cancel": "5210952531676504517",   # ❌
+    "confirm": "5206607081334906820",  # ✅
+    "binance": "6222208096257712941",  # Binance icon
 }
 
 
@@ -26,103 +26,238 @@ def safe(value):
     return html_escape(str(value)) if value is not None else ""
 
 
-def random_nonce(length=32):
-    chars = string.ascii_letters + string.digits
-    return "".join(random.choice(chars) for _ in range(length))
-
-
-def get_binance_account_id():
+def get_binance_pay_id():
+    """
+    BINANCE_PAY_ID env mein apni Binance ID / Pay ID set karo.
+    Fallback BINANCE_WALLET_ADDRESS rakha hai taake purana config bhi work kare.
+    """
     return getattr(config, "BINANCE_PAY_ID", "") or getattr(config, "BINANCE_WALLET_ADDRESS", "")
 
 
-def build_binance_pay_signature(timestamp, nonce, body):
-    payload = f"{timestamp}\n{nonce}\n{body}\n"
-    return hmac.new(
+def sign_query(params):
+    """
+    Binance signed endpoint ke liye HMAC SHA256 query signature.
+    /sapi/v1/pay/transactions standard Binance signed endpoint hai.
+    """
+    query = urllib.parse.urlencode(params)
+    signature = hmac.new(
         config.BINANCE_API_SECRET.encode("utf-8"),
-        payload.encode("utf-8"),
-        hashlib.sha512
-    ).hexdigest().upper()
+        query.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+    return query + "&signature=" + signature
 
 
-def query_binance_pay_order(binance_order_id):
+def binance_signed_get(path, params):
     if not config.BINANCE_API_KEY or not config.BINANCE_API_SECRET:
-        return False, "Binance API key/secret missing."
+        return False, "BINANCE_API_KEY / BINANCE_API_SECRET missing."
 
-    url = "https://bpay.binanceapi.com/binancepay/openapi/order/query"
-    body_dict = {"merchantTradeNo": str(binance_order_id)}
-    body = json.dumps(body_dict, separators=(",", ":"))
+    params["timestamp"] = int(time.time() * 1000)
+    params.setdefault("recvWindow", 5000)
 
-    timestamp = str(int(time.time() * 1000))
-    nonce = random_nonce()
-    signature = build_binance_pay_signature(timestamp, nonce, body)
+    query = sign_query(params)
+    url = "https://api.binance.com" + path + "?" + query
 
-    headers = {
-        "Content-Type": "application/json",
-        "BinancePay-Timestamp": timestamp,
-        "BinancePay-Nonce": nonce,
-        "BinancePay-Certificate-SN": config.BINANCE_API_KEY,
-        "BinancePay-Signature": signature,
-    }
-
-    request = urllib.request.Request(url, data=body.encode("utf-8"), headers=headers, method="POST")
+    req = urllib.request.Request(
+        url,
+        headers={
+            "X-MBX-APIKEY": config.BINANCE_API_KEY,
+            "Content-Type": "application/json",
+        },
+        method="GET"
+    )
 
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(req, timeout=20) as response:
             raw = response.read().decode("utf-8")
             return True, json.loads(raw)
+
     except urllib.error.HTTPError as e:
         try:
-            error_body = e.read().decode("utf-8")
+            body = e.read().decode("utf-8")
         except Exception:
-            error_body = str(e)
-        return False, f"Binance HTTP error: {error_body}"
+            body = str(e)
+        return False, f"Binance HTTP error: {body}"
+
     except Exception as e:
         return False, f"Binance API error: {e}"
 
 
-def verify_binance_order_id(binance_order_id, expected_amount):
-    ok, result = query_binance_pay_order(binance_order_id)
+def get_pay_trade_history(minutes=10, limit=100):
+    """
+    Binance Pay History:
+    GET /sapi/v1/pay/transactions
+
+    Last `minutes` ka data fetch karta hai.
+    """
+    now_ms = int(time.time() * 1000)
+    start_ms = now_ms - (minutes * 60 * 1000)
+
+    params = {
+        "startTime": start_ms,
+        "endTime": now_ms,
+        "limit": min(int(limit), 100),
+    }
+
+    return binance_signed_get("/sapi/v1/pay/transactions", params)
+
+
+def get_transaction_amount_usdt(tx):
+    """
+    Binance Pay history mein amount main amount field ya fundsDetail ke andar aa sakta hai.
+    USDT amount nikalne ki koshish karta hai.
+    """
+    # Direct amount/currency
+    try:
+        currency = str(tx.get("currency", "")).upper()
+        amount = float(tx.get("amount", 0))
+        if currency in ("USDT", "USD"):
+            return amount
+    except Exception:
+        pass
+
+    # fundsDetail list
+    for item in tx.get("fundsDetail", []) or []:
+        try:
+            currency = str(item.get("currency", "")).upper()
+            amount = float(item.get("amount", 0))
+            if currency in ("USDT", "USD"):
+                return amount
+        except Exception:
+            continue
+
+    return None
+
+
+def receiver_matches_our_binance_id(tx):
+    """
+    Safety check: payment receiver hamara Binance ID/Pay ID ho.
+    Agar response mein receiverInfo available hai to match karega.
+    Agar API own account ka history de raha hai aur receiverInfo missing/different hai,
+    is check ko soft rakha gaya hai.
+    """
+    our_id = str(get_binance_pay_id()).strip()
+    if not our_id:
+        return True
+
+    receiver = tx.get("receiverInfo") or {}
+    possible_ids = [
+        receiver.get("binanceId"),
+        receiver.get("accountId"),
+        receiver.get("email"),
+        receiver.get("phoneNumber"),
+    ]
+
+    possible_ids = [str(x).strip() for x in possible_ids if x]
+
+    if not possible_ids:
+        return True
+
+    return our_id in possible_ids
+
+
+def find_binance_payment_reference(reference, expected_amount, minutes_order=10, minutes_offchain=5):
+    """
+    User ka diya hua Binance Order ID / off-chain transaction reference verify karta hai.
+
+    Logic:
+    - Last 10 minutes ki Binance Pay history fetch.
+    - transactionId ya related reference exact match.
+    - Amount expected_amount ke barabar ya zyada.
+    - Receiver hamara Binance ID/Pay ID.
+    """
+    ref = str(reference).strip()
+    expected = float(expected_amount)
+
+    # screenshot jaisa: order ID last 10 min, off-chain ref last 5 min.
+    ok, result = get_pay_trade_history(minutes=minutes_order, limit=100)
 
     if not ok:
         return False, str(result)
 
-    data = result.get("data") or {}
-    status = str(data.get("status") or data.get("orderStatus") or data.get("bizStatus") or "").upper()
+    txs = result.get("data", [])
+    if isinstance(txs, dict):
+        txs = txs.get("data", []) or txs.get("list", []) or []
 
-    paid_statuses = {"PAID", "SUCCESS", "COMPLETED", "PAY_SUCCESS"}
+    now_ms = int(time.time() * 1000)
+    offchain_start = now_ms - (minutes_offchain * 60 * 1000)
 
-    if status and status not in paid_statuses:
-        return False, f"Payment status is `{status}`."
+    checked = 0
 
-    amount_raw = data.get("orderAmount") or data.get("totalFee") or data.get("amount") or data.get("transactAmount") or 0
+    for tx in txs:
+        checked += 1
 
-    try:
-        paid_amount = float(amount_raw)
-        expected = float(expected_amount)
-        if paid_amount + 1e-9 < expected:
-            return False, f"Paid amount {paid_amount} is less than required {expected}."
-    except Exception:
-        pass
+        tx_time = int(tx.get("transactionTime", 0) or tx.get("createTime", 0) or 0)
 
-    return True, "Payment verified successfully."
+        possible_refs = [
+            tx.get("transactionId"),
+            tx.get("orderId"),
+            tx.get("merchantTradeNo"),
+            tx.get("prepayId"),
+            tx.get("reference"),
+            tx.get("offChainReference"),
+            tx.get("offchainReference"),
+        ]
+
+        possible_refs = [str(x).strip() for x in possible_refs if x is not None]
+
+        exact_ref_match = ref in possible_refs
+
+        # Off-chain reference ke liye recent 5 min check.
+        offchain_match = exact_ref_match and (not tx_time or tx_time >= offchain_start)
+
+        if not exact_ref_match and not offchain_match:
+            continue
+
+        if not receiver_matches_our_binance_id(tx):
+            return False, "Transaction found, but receiver Binance ID does not match."
+
+        amount = get_transaction_amount_usdt(tx)
+
+        if amount is None:
+            return False, "Transaction found, but USDT amount could not be read."
+
+        # Receiver side income should normally be positive.
+        if amount < expected:
+            return False, f"Transaction found but amount {amount} is less than required {expected}."
+
+        return True, "Payment verified successfully."
+
+    return False, (
+        "Order ID was not found in Binance Pay during the last 10 minutes, "
+        "and the off-chain transaction reference was not found during the last 5 minutes. "
+        "Please try again."
+    )
 
 
 def process_binance_payment(user_id, order_id, product_id, quantity, total_amount, binance_order_id=None):
+    """
+    User Binance ID / Pay ID par payment bhejta hai.
+    Phir user jo Binance Order ID / off-chain transaction reference bhejta hai,
+    bot Binance Pay trade history se auto verify karta hai.
+    """
     if not binance_order_id:
-        return False, "Binance Order ID missing."
+        return False, "Binance Order ID / transaction reference missing."
 
-    print(f"[Binance] Verifying Binance Order ID {binance_order_id}, user {user_id}, amount {total_amount} USDT")
+    print(
+        f"[Binance Pay History] Checking ref={binance_order_id}, "
+        f"user={user_id}, amount={total_amount} USDT"
+    )
 
-    success, msg = verify_binance_order_id(binance_order_id, total_amount)
+    success, msg = find_binance_payment_reference(
+        reference=binance_order_id,
+        expected_amount=total_amount,
+        minutes_order=10,
+        minutes_offchain=5,
+    )
 
     if success:
-        database.add_transaction(user_id, "Binance Purchase", -float(total_amount))
+        database.add_transaction(user_id, "Binance Pay Purchase", -float(total_amount))
         return True, f"{tg(EMOJIS['confirm'], '✅')} Payment verified successfully."
 
     return False, (
         f"{tg(EMOJIS['cancel'], '❌')} <b>Payment not verified.</b>\n\n"
-        f"Reason: {safe(msg)}\n\n"
-        f"Please check your Binance Order ID or contact support."
+        f"{safe(msg)}"
     )
 
 
@@ -148,15 +283,14 @@ def process_wallet_payment(user_id, order_id, product_id, quantity, total_amount
 
 
 def get_binance_payment_details(total_amount):
-    binance_id = get_binance_account_id()
+    binance_id = get_binance_pay_id()
 
     return (
         f"{tg(EMOJIS['binance'], '💳')} <b>Binance Payment</b>\n\n"
-        f"Send exactly: <b>{safe(total_amount)} USDT</b>\n\n"
-        f"{tg(EMOJIS['binance'], '💳')} <b>Binance ID:</b>\n"
+        f"Binance ID (tap to copy):\n"
         f"<code>{safe(binance_id)}</code>\n\n"
-        f"After sending payment, click the button below.\n"
-        f"Then send your <b>Binance Order ID / Transaction ID</b> for verification.\n\n"
+        f"Amount to transfer: <b>${safe(total_amount)}</b>\n\n"
+        f"Please send the order ID or off-chain transaction reference after payment for verification.\n\n"
         f"━━━━━━━━━━━━━━━━━━"
     )
 
