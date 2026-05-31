@@ -2,7 +2,7 @@ import logging
 import datetime
 import json
 from html import escape as html_escape
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes, ConversationHandler
@@ -152,6 +152,7 @@ async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, 
     WITHDRAW_AMOUNT,
     WITHDRAW_ADDRESS,
     CONTACT_ADMIN,
+    BINANCE_ORDER_ID,
     ORDER_DETAILS,
     ADMIN_ORDER_DETAILS,
     ADMIN_ADD_PRODUCT,
@@ -163,7 +164,7 @@ async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, 
     ADMIN_BROADCAST,
     ADMIN_DELETE_PRODUCT,
     ADMIN_BULK_ADD_PRODUCTS,
-) = range(15)
+) = range(16)
 
 
 # ══════════════════════════════════════════════════════════
@@ -526,7 +527,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(
             payment.get_binance_payment_details(total_amount),
             reply_markup=utils.binance_payment_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         return ConversationHandler.END
 
@@ -546,7 +547,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(
             text,
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         return ConversationHandler.END
 
@@ -584,25 +585,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
 
     elif data == 'check_binance_payment':
-        await query.edit_message_text("⏳ Checking payment... Please wait.")
-
-        success, msg = payment.process_binance_payment(
-            user_id,
-            utils.generate_order_id(),
-            context.user_data.get('current_product_id'),
-            context.user_data.get('quantity'),
-            context.user_data.get('total_amount')
+        await query.edit_message_text(
+            "✅ <b>Payment Sent?</b>\n\n"
+            "Now send your <b>Binance Order ID / Transaction ID</b> here.\n\n"
+            "Example: <code>1234567890</code>",
+            reply_markup=utils.binance_payment_keyboard(),
+            parse_mode='HTML'
         )
-
-        if success:
-            await deliver_product(update, context, 'Binance')
-        else:
-            await query.edit_message_text(
-                msg,
-                reply_markup=utils.payment_method_keyboard()
-            )
-
-        return ConversationHandler.END
+        return BINANCE_ORDER_ID
 
     elif data == 'confirm_wallet_payment':
         success, msg = payment.process_wallet_payment(
@@ -722,6 +712,36 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ══════════════════════════════════════════════════════════
 #   USER CONVERSATION HANDLERS
 # ══════════════════════════════════════════════════════════
+
+async def handle_binance_order_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    binance_order_id = update.message.text.strip()
+    user_id = update.effective_user.id
+
+    await update.message.reply_text(
+        "⏳ Verifying Binance payment... Please wait.",
+        parse_mode='HTML'
+    )
+
+    success, msg = payment.process_binance_payment(
+        user_id,
+        utils.generate_order_id(),
+        context.user_data.get('current_product_id'),
+        context.user_data.get('quantity'),
+        context.user_data.get('total_amount'),
+        binance_order_id=binance_order_id
+    )
+
+    if success:
+        await deliver_product(update, context, 'Binance')
+    else:
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.payment_method_keyboard(),
+            parse_mode='HTML'
+        )
+
+    return ConversationHandler.END
+
 
 async def handle_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
@@ -1778,28 +1798,14 @@ async def cmd_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
 
 
-
-
-async def setup_bot_commands(application):
-    """
-    Telegram app ke bottom-left Menu button mein /start command show karega.
-    User Menu -> /start click karega to bot ka main menu open ho jayega.
-    """
-    await application.bot.set_my_commands([
-        BotCommand("start", "Open main menu"),
-    ])
-
-
-
 # ══════════════════════════════════════════════════════════
 #   MAIN
 # ══════════════════════════════════════════════════════════
 
 def main() -> None:
-    application = ApplicationBuilder().token(config.TOKEN).post_init(setup_bot_commands).build()
+    application = ApplicationBuilder().token(config.TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("menu", start))
     application.add_handler(CommandHandler("admin", admin_panel))
 
     application.add_handler(CommandHandler("addproduct_data", cmd_addproduct_data))
@@ -1834,6 +1840,9 @@ def main() -> None:
             ],
             CONTACT_ADMIN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_contact_admin)
+            ],
+            BINANCE_ORDER_ID: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_binance_order_id)
             ],
             ORDER_DETAILS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_order_details)
