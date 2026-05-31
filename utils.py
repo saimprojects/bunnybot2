@@ -117,6 +117,7 @@ def main_menu_keyboard():
 
     return InlineKeyboardMarkup(keyboard)
 
+
 def products_list_keyboard(products):
     buttons = []
 
@@ -127,8 +128,6 @@ def products_list_keyboard(products):
         stock = p[4]
         product_emoji_id = p[9] if len(p) > 9 and p[9] else None
 
-        # Format: Sticker icon + title + price$ + stock in brackets
-        # Sticker icon comes from icon_custom_emoji_id, not text.
         text = f"{product_name}  {price}$  ({stock})"
         style = "success" if stock and stock > 0 else "danger"
 
@@ -143,6 +142,7 @@ def products_list_keyboard(products):
 
     buttons.append(back_btn("Back to Main Menu", callback_data='main_menu'))
     return build_menu(buttons, n_cols=1)
+
 
 def product_details_keyboard():
     buttons = [
@@ -172,7 +172,12 @@ def payment_method_keyboard():
         ),
     ], n_cols=1)
 
+
 def binance_payment_keyboard():
+    """
+    Payment details message par show hota hai.
+    Sirf 2 buttons: I have sent payment + Cancel Order.
+    """
     return build_menu([
         btn(
             "I have sent payment",
@@ -187,6 +192,36 @@ def binance_payment_keyboard():
             emoji_id=EMOJIS["cancel"]
         ),
     ], n_cols=1)
+
+
+def ask_order_id_keyboard():
+    """
+    Jab bot Order ID maange tab show hota hai.
+    Sirf Cancel button — user ko type karna hai, koi action button nahi.
+    """
+    return build_menu([
+        btn(
+            "Cancel Order",
+            callback_data="cancel_order",
+            style="danger",
+            emoji_id=EMOJIS["cancel"]
+        ),
+    ], n_cols=1)
+
+
+def ask_deposit_ref_keyboard():
+    """
+    Jab bot wallet deposit ke liye Order ID/ref maange tab show hota hai.
+    Sirf Cancel button — user ko type karna hai.
+    """
+    return build_menu([
+        back_btn(
+            "Cancel",
+            callback_data="wallet",
+            style="danger"
+        ),
+    ], n_cols=1)
+
 
 def wallet_payment_keyboard():
     buttons = [
@@ -221,7 +256,12 @@ def wallet_options_keyboard():
         back_btn("Back", callback_data="main_menu")
     ])
 
+
 def deposit_wallet_keyboard():
+    """
+    Deposit payment details message par show hota hai.
+    Sirf 2 buttons: I have sent payment + Back.
+    """
     return build_menu([
         btn(
             "I have sent payment",
@@ -236,20 +276,20 @@ def deposit_wallet_keyboard():
         ),
     ], n_cols=1)
 
+
 def support_keyboard():
     buttons = [
         btn("FAQ", callback_data='faq', style="primary", emoji_id=EMOJIS["faq"]),
         btn(
-    "Contact Support",
-    url="https://t.me/Bunnyhaccks",
-    style="success",
-    emoji_id=EMOJIS["support"]
-),
+            "Contact Support",
+            url="https://t.me/Bunnyhaccks",
+            style="success",
+            emoji_id=EMOJIS["support"]
+        ),
         btn("Announcements", url='https://t.me/bunnyhackss', style="primary", emoji_id=EMOJIS["announcement"]),
         back_btn("Back", callback_data='main_menu', style="danger"),
     ]
     return build_menu(buttons, n_cols=1)
-
 
 
 def product_update_purchase_keyboard(product, style="success"):

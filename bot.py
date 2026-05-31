@@ -76,20 +76,10 @@ def ce(name: str) -> str:
 
 
 def product_purchase_keyboard(product, button_style="success"):
-    """
-    Announcement/update message ke andar sirf isi specific product ka single colored button.
-    utils.btn helper use hota hai, isi liye baqi colored buttons jaisa render hoga.
-    """
     return utils.product_update_purchase_keyboard(product, style=button_style)
 
 
-
-
 def find_recent_product_by_name(product_name):
-    """
-    Product add ke baad latest product ko name se pick karta hai.
-    database.get_all_products() id DESC order mein hai.
-    """
     products_list = database.get_all_products()
 
     for product in products_list:
@@ -115,8 +105,6 @@ def product_update_message(title, product, lines=None):
 
     text += f"\n{ce('choose_option')} Click below to buy this product."
     return text
-
-
 
 
 async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text: str, parse_mode: str = "Markdown"):
@@ -391,7 +379,6 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
         )
 
 
-
 # ══════════════════════════════════════════════════════════
 #   USER INLINE BUTTON HANDLER
 # ══════════════════════════════════════════════════════════
@@ -526,6 +513,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         total_amount = context.user_data.get('total_amount')
         context.user_data['payment_method'] = 'Binance Pay ID'
 
+        # Step 1: Payment details + "I have sent payment" button
         await query.edit_message_text(
             payment.get_binance_payment_details(total_amount),
             reply_markup=utils.binance_payment_keyboard(),
@@ -578,11 +566,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
 
     elif data == 'check_binance_payment':
+        # Step 2: User ne "I have sent payment" click kiya
+        # Ab sirf Order ID maango — koi action button nahi, sirf Cancel
         await query.edit_message_text(
             "✅ <b>Payment Sent?</b>\n\n"
             "Send your <b>Binance Order ID / off-chain transaction reference</b> here.\n\n"
             "Example: <code>M_P_71505104267788288</code>",
-            reply_markup=utils.binance_payment_keyboard(),
+            reply_markup=utils.ask_order_id_keyboard(),
             parse_mode='HTML'
         )
         return BINANCE_ORDER_ID
@@ -621,6 +611,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
 
     elif data == 'deposit_wallet':
+        # Step 1: Amount maango
         await query.edit_message_text(
             f"{ce('wallet')} <b>Wallet Deposit</b>\n\n"
             "Enter amount to top up with Binance Pay ID.\n"
@@ -631,6 +622,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return WALLET_DEPOSIT_AMOUNT
 
     elif data == 'check_deposit_payment':
+        # Step 3: User ne "I have sent payment" click kiya
+        # Ab sirf ref maango — koi action button nahi, sirf Cancel
         deposit_amount = context.user_data.get('wallet_deposit_amount')
 
         if not deposit_amount:
@@ -647,7 +640,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "✅ <b>Payment Sent?</b>\n\n"
             "Send your <b>Binance Order ID / off-chain transaction reference</b> here.\n\n"
             "Example: <code>M_P_71505104267788288</code>",
-            reply_markup=utils.deposit_wallet_keyboard(),
+            reply_markup=utils.ask_deposit_ref_keyboard(),
             parse_mode='HTML'
         )
         return WALLET_DEPOSIT_REF
@@ -721,6 +714,7 @@ async def handle_wallet_deposit_amount(update: Update, context: ContextTypes.DEF
 
         context.user_data['wallet_deposit_amount'] = amount
 
+        # Step 2: Payment details + "I have sent payment" button
         await update.message.reply_text(
             payment.get_binance_wallet_deposit_details(amount),
             reply_markup=utils.deposit_wallet_keyboard(),
@@ -773,6 +767,7 @@ async def handle_wallet_deposit_ref(update: Update, context: ContextTypes.DEFAUL
 
 
 async def handle_binance_order_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # Step 3: User ne Order ID type kiya — verify karo
     binance_order_id = update.message.text.strip()
     user_id = update.effective_user.id
 
@@ -949,11 +944,6 @@ def format_item_data_for_delivery(item_data):
 
 
 def build_order_details_message(order, is_admin=False):
-    """
-    orders table columns:
-    0 id, 1 user_id, 2 product_id, 3 quantity, 4 total_amount,
-    5 payment_method, 6 status, 7 order_date, 8 delivery_details
-    """
     product = database.get_product(order[2])
     product_name = product[1] if product else "Unknown"
 
@@ -1082,11 +1072,6 @@ async def deliver_product(update: Update, context: ContextTypes.DEFAULT_TYPE, pa
 
         return
 
-    # New flexible database format:
-    # items = [{"id": 1, "data": {"email": "...", "password": "..."}}]
-    #
-    # Fallback support for old tuple format:
-    # items = [("email", "password")]
     if isinstance(items[0], dict):
         item_ids = [item["id"] for item in items]
         delivery_details = [item["data"] for item in items]
@@ -1286,22 +1271,13 @@ async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             "━━━━━━━━━━━━━━━━━━\n\n"
             "*Email/Password Product Example:*\n"
             "`1[{email:saimpkf@gmail.com,password:123},{email:test@gmail.com,password:456}]`\n\n"
-            "Iska matlab:\n"
-            "Product ID `1` mein 2 stock items add hongi.\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
             "*Link Product Example:*\n"
             "`2[{link:https://example.com/account1},{link:https://example.com/account2}]`\n\n"
-            "Iska matlab:\n"
-            "Product ID `2` mein 2 link items add hongi.\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
             "*License Key Product Example:*\n"
             "`3[{key:XXXXX-XXXXX},{key:YYYYY-YYYYY}]`\n\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
             "*Bulk Stock Example:*\n"
-            "`1[{email:a@gmail.com,password:111},{email:b@gmail.com,password:222}] 2[{link:https://x.com/1},{link:https://x.com/2}] 3[{key:XXXXX},{key:YYYYY}]`\n\n"
-            "Iska matlab:\n"
-            "Product `1`, `2`, aur `3` ka stock aik hi message mein add hoga.\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
+            "`1[{email:a@gmail.com,password:111}] 2[{link:https://x.com/1}] 3[{key:XXXXX}]`\n\n"
             "⚠️ Spaces field ke andar avoid karo.\n"
             "✅ Jitni `{...}` items doge, stock auto utna increase hoga.",
             reply_markup=utils.admin_cancel_keyboard(),
@@ -1747,9 +1723,7 @@ async def cmd_additems(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         raw = update.message.text.replace('/additems ', '', 1)
         stock_sections = admin.parse_stock_bulk_format(raw)
-
         msg = admin.add_stock_bulk_admin(stock_sections)
-
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     except Exception as e:
@@ -1765,7 +1739,6 @@ async def cmd_editprice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             int(context.args[0]),
             float(context.args[1])
         )
-
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     except Exception:
@@ -1784,7 +1757,6 @@ async def cmd_editstock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             int(context.args[0]),
             int(context.args[1])
         )
-
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     except Exception:
@@ -1805,10 +1777,7 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     for user in users:
         try:
-            await context.bot.send_message(
-                chat_id=user[0],
-                text=msg_text
-            )
+            await context.bot.send_message(chat_id=user[0], text=msg_text)
             sent += 1
         except Exception:
             pass
@@ -1825,7 +1794,6 @@ async def cmd_addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         amount = float(context.args[1])
 
         msg = admin.add_balance_admin(uid, amount)
-
         await update.message.reply_text(msg, parse_mode='Markdown')
 
         await context.bot.send_message(
@@ -1847,7 +1815,6 @@ async def cmd_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     try:
         msg = admin.approve_withdrawal_admin(int(context.args[0]))
-
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     except Exception:
