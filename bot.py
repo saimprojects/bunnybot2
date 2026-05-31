@@ -2,7 +2,7 @@ import logging
 import datetime
 import json
 from html import escape as html_escape
-from telegram import Update, InlineKeyboardButton
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes, ConversationHandler
@@ -60,12 +60,79 @@ CUSTOM_EMOJIS = {
     "faq": ("5282843764451195532", "📖"),
     "contact": ("5443038326535759644", "💬"),
     "announcement": ("5424818078833715060", "🔔"),
+    "confirm": ("5206607081334906820", "✅"),
+    "cancel": ("5210952531676504517", "❌"),
+    "order": ("5406683434124859552", "🛒"),
 }
 
 
 def ce(name: str) -> str:
     emoji_id, fallback = CUSTOM_EMOJIS[name]
     return tg(emoji_id, fallback)
+
+
+
+def product_purchase_keyboard(product, button_style="success"):
+    """
+    Announcement/update message ke andar sirf isi specific product ka single colored button.
+    Button callback direct product_<id> par jayega.
+    """
+    if not product:
+        return None
+
+    product_id = product[0]
+    product_name = html_escape(str(product[1]))
+    product_emoji_id = product[9] if len(product) > 9 and product[9] else None
+
+    api_kwargs = {
+        "button_type": button_style
+    }
+
+    if product_emoji_id:
+        api_kwargs["icon_custom_emoji_id"] = str(product_emoji_id)
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                text=f"Buy {product_name}",
+                callback_data=f"product_{product_id}",
+                api_kwargs=api_kwargs
+            )
+        ]
+    ])
+
+
+def find_recent_product_by_name(product_name):
+    """
+    Product add ke baad latest product ko name se pick karta hai.
+    database.get_all_products() id DESC order mein hai.
+    """
+    products_list = database.get_all_products()
+
+    for product in products_list:
+        if str(product[1]).strip().lower() == str(product_name).strip().lower():
+            return product
+
+    return products_list[0] if products_list else None
+
+
+def product_update_message(title, product, lines=None):
+    product_name = html_escape(str(product[1])) if product else "Unknown"
+    stock = product[4] if product and len(product) > 4 else "N/A"
+
+    text = (
+        f"{ce('announcement')} <b>{html_escape(title)}</b>\n\n"
+        f"{ce('box')} Product: <b>{product_name}</b>\n"
+        f"{ce('box')} Available Stock: <b>{stock}</b>\n"
+    )
+
+    if lines:
+        for line in lines:
+            text += line + "\n"
+
+    text += f"\n{ce('choose_option')} Click below to buy this product."
+    return text
+
 
 
 
@@ -385,7 +452,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(
             details_msg,
             reply_markup=utils.product_details_keyboard(),
-            parse_mode='HTML'
+            parse_mode='Markdown'
         )
         return ConversationHandler.END
 
@@ -431,7 +498,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text(
                 products.get_product_details_message(product_id),
                 reply_markup=utils.product_details_keyboard(),
-                parse_mode='HTML'
+                parse_mode='Markdown'
             )
         else:
             await start(update, context)
@@ -1267,17 +1334,19 @@ async def handle_admin_add_product(update: Update, context: ContextTypes.DEFAULT
         )
 
         if msg.startswith("✅"):
+            product = find_recent_product_by_name(data[0])
             await broadcast_to_all_users(
                 context,
-                (
-                    f"📢 *New Product Added!*\n\n"
-                    f"📦 Product: *{data[0]}*\n"
-                    f"💰 Price: *{data[2]} USDT*\n"
-                    f"📦 Stock: *0*\n\n"
-                    f"👇 Check it now!"
+                product_update_message(
+                    "New Product Added!",
+                    product,
+                    [
+                        f"{ce('wallet')} Price: <b>{html_escape(str(data[2]))} USDT</b>",
+                        f"{ce('confirm')} Status: <b>Available Soon</b>",
+                    ]
                 ),
-                reply_markup=utils.products_list_keyboard(database.get_all_products()),
-                parse_mode='Markdown'
+                reply_markup=product_purchase_keyboard(product, "success"),
+                parse_mode='HTML'
             )
 
     except Exception as e:
@@ -1304,12 +1373,21 @@ async def handle_admin_bulk_add_products(update: Update, context: ContextTypes.D
         )
 
         if msg.startswith("✅"):
-            await broadcast_to_all_users(
-                context,
-                "📢 *New Products Added!*\n\n👇 Check products now!",
-                reply_markup=utils.products_list_keyboard(database.get_all_products()),
-                parse_mode='Markdown'
-            )
+            for product_data in products_data:
+                product = find_recent_product_by_name(product_data["name"])
+                await broadcast_to_all_users(
+                    context,
+                    product_update_message(
+                        "New Product Added!",
+                        product,
+                        [
+                            f"{ce('wallet')} Price: <b>{html_escape(str(product_data['price']))} USDT</b>",
+                            f"{ce('confirm')} Status: <b>Available Soon</b>",
+                        ]
+                    ),
+                    reply_markup=product_purchase_keyboard(product, "success"),
+                    parse_mode='HTML'
+                )
 
     except Exception as e:
         await update.message.reply_text(
@@ -1340,15 +1418,16 @@ async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_T
                 if product:
                     await broadcast_to_all_users(
                         context,
-                        (
-                            f"📢 *Stock Updated!*\n\n"
-                            f"📦 Product: *{product[1]}*\n"
-                            f"✅ New Stock Added: *{len(items_data)}*\n"
-                            f"📦 Available Now: *{product[4]}*\n\n"
-                            f"👇 Buy now!"
+                        product_update_message(
+                            "Stock Updated!",
+                            product,
+                            [
+                                f"{ce('confirm')} New Stock Added: <b>{len(items_data)}</b>",
+                                f"{ce('box')} Available Now: <b>{product[4]}</b>",
+                            ]
                         ),
-                        reply_markup=utils.products_list_keyboard(database.get_all_products()),
-                        parse_mode='Markdown'
+                        reply_markup=product_purchase_keyboard(product, "success"),
+                        parse_mode='HTML'
                     )
 
     except Exception as e:
@@ -1376,16 +1455,18 @@ async def handle_admin_edit_price(update: Update, context: ContextTypes.DEFAULT_
         )
 
         if msg.startswith("✅") and product_before:
+            product = database.get_product(int(product_id))
             await broadcast_to_all_users(
                 context,
-                (
-                    f"📢 *Price Updated!*\n\n"
-                    f"📦 Product: *{product_before[1]}*\n"
-                    f"💰 New Price: *{price} USDT*\n\n"
-                    f"👇 Check it now!"
+                product_update_message(
+                    "Price Updated!",
+                    product,
+                    [
+                        f"{ce('wallet')} New Price: <b>{html_escape(str(price))} USDT</b>",
+                    ]
                 ),
-                reply_markup=utils.products_list_keyboard(database.get_all_products()),
-                parse_mode='Markdown'
+                reply_markup=product_purchase_keyboard(product, "success"),
+                parse_mode='HTML'
             )
 
     except Exception as e:
@@ -1413,16 +1494,18 @@ async def handle_admin_edit_stock(update: Update, context: ContextTypes.DEFAULT_
         )
 
         if msg.startswith("✅") and product_before:
+            product = database.get_product(int(product_id))
             await broadcast_to_all_users(
                 context,
-                (
-                    f"📢 *Stock Updated!*\n\n"
-                    f"📦 Product: *{product_before[1]}*\n"
-                    f"📦 Available Now: *{stock}*\n\n"
-                    f"👇 Buy now!"
+                product_update_message(
+                    "Stock Updated!",
+                    product,
+                    [
+                        f"{ce('box')} Available Now: <b>{html_escape(str(stock))}</b>",
+                    ]
                 ),
-                reply_markup=utils.products_list_keyboard(database.get_all_products()),
-                parse_mode='Markdown'
+                reply_markup=product_purchase_keyboard(product, "success"),
+                parse_mode='HTML'
             )
 
     except Exception as e:
