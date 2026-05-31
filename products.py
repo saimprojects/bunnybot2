@@ -1,5 +1,4 @@
 import database
-import json
 from html import escape as html_escape
 
 
@@ -15,8 +14,7 @@ EMOJIS = {
     "sticker": "5406745015365943482",      # 🧩
     "confirm": "5206607081334906820",      # ✅
     "warning": "5210952531676504517",      # ⚠️ / ❌ style
-    "stats": "5231200819986047254",        # ⭐ / stats style
-    "name": "5461117441612462242",         # 👤 style fallback
+    "description": "5282843764451195532",  # 📖
 }
 
 
@@ -31,6 +29,7 @@ def get_product_icon(emoji_id):
     """
     if emoji_id and str(emoji_id).strip() and str(emoji_id).strip().lower() != "none":
         return tg(str(emoji_id).strip(), "📦")
+
     return tg(EMOJIS["product"], "📦")
 
 
@@ -40,29 +39,26 @@ def get_product_details_message(product_id):
     if not product:
         return "Product not found."
 
-    (
-        pid,
-        name,
-        duration,
-        price,
-        stock,
-        rating,
-        description,
-        features_json,
-        note,
-        emoji_id
-    ) = product if len(product) > 9 else (*product, "")
-
-    try:
-        features = json.loads(features_json) if features_json else []
-    except Exception:
-        features = []
-
-    features_text = (
-        "\n".join([f"{tg(EMOJIS['confirm'], '✅')} {safe(feature)}" for feature in features])
-        if features
-        else "N/A"
-    )
+    # Current database product tuple:
+    # 0 id, 1 name, 2 duration, 3 price, 4 stock,
+    # 5 rating, 6 description, 7 features_json, 8 note, 9 emoji_id
+    #
+    # Rating aur Features ab display/use nahi honge.
+    if len(product) > 9:
+        pid = product[0]
+        name = product[1]
+        duration = product[2]
+        price = product[3]
+        stock = product[4]
+        description = product[6]
+        note = product[8]
+        emoji_id = product[9]
+    else:
+        # Fallback support agar future mein database compact format ho:
+        # id, name, duration, price, stock, description, note, emoji_id
+        pid, name, duration, price, stock, description, note, emoji_id = (
+            product if len(product) >= 8 else (*product, "", "", "")
+        )
 
     product_icon = get_product_icon(emoji_id)
 
@@ -72,14 +68,10 @@ def get_product_details_message(product_id):
         f"{product_icon} <b>Name:</b> {safe(name)}\n"
         f"{tg(EMOJIS['date'], '📅')} <b>Duration:</b> {safe(duration)}\n"
         f"{tg(EMOJIS['wallet'], '💰')} <b>Price:</b> {safe(price)} USDT\n"
-        f"{tg(EMOJIS['product'], '📦')} <b>Stock Available:</b> {safe(stock)}\n"
-        f"{tg(EMOJIS['stats'], '⭐')} <b>Rating:</b> {safe(rating)}/5\n\n"
+        f"{tg(EMOJIS['product'], '📦')} <b>Stock Available:</b> {safe(stock)}\n\n"
 
-        f"📝 <b>Description:</b>\n"
+        f"{tg(EMOJIS['description'], '📖')} <b>Description:</b>\n"
         f"{safe(description)}\n\n"
-
-        f"{tg(EMOJIS['confirm'], '✅')} <b>Features:</b>\n"
-        f"{features_text}\n\n"
 
         f"⚠️ <b>Note:</b>\n"
         f"{safe(note)}\n\n"

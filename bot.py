@@ -2,7 +2,7 @@ import logging
 import datetime
 import json
 from html import escape as html_escape
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes, ConversationHandler
@@ -446,7 +446,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(
             details_msg,
             reply_markup=utils.product_details_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         return ConversationHandler.END
 
@@ -492,7 +492,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text(
                 products.get_product_details_message(product_id),
                 reply_markup=utils.product_details_keyboard(),
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
         else:
             await start(update, context)
@@ -1168,11 +1168,12 @@ async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data == 'admin_add_product':
         await query.edit_message_text(
             "➕ *Add Product*\n\n"
-            "Stock field nahi dena. Stock auto `0` se start hoga.\n\n"
+            "Stock field nahi dena. Stock auto `0` se start hoga.\n"
+            "Rating aur Features field remove kar di gayi hain.\n\n"
             "Format:\n"
-            "`Name | Duration | Price | Rating | Description | feature1, feature2 | Note | Sticker Emoji ID`\n\n"
+            "`Name | Duration | Price | Description | Note | Sticker Emoji ID`\n\n"
             "Example:\n"
-            "`Netflix Premium | 1 Month | 3.5 | 4.8 | Premium account | 4K, Private | No password change | 5456140674028019486`",
+            "`Netflix Premium | 1 Month | 3.5 | Premium account | No password change | 5456140674028019486`",
             reply_markup=utils.admin_cancel_keyboard(),
             parse_mode='Markdown'
         )
@@ -1181,11 +1182,12 @@ async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data == 'admin_bulk_add_products':
         await query.edit_message_text(
             "➕ *Bulk Add Products*\n\n"
-            "Stock field nahi dena. Har product stock `0` se start hoga.\n\n"
+            "Stock field nahi dena. Har product stock `0` se start hoga.\n"
+            "Rating aur Features field remove kar di gayi hain.\n\n"
             "Format:\n"
-            "`[Name | Duration | Price | Rating | Description | feature1, feature2 | Note | Sticker Emoji ID] [Name2 | Duration | Price | Rating | Description | feature1, feature2 | Note | Sticker Emoji ID]`\n\n"
+            "`[Name | Duration | Price | Description | Note | Sticker Emoji ID] [Name2 | Duration | Price | Description | Note | Sticker Emoji ID]`\n\n"
             "Example:\n"
-            "`[Netflix | 1 Month | 3.5 | 4.8 | Premium account | 4K, Private | No password change | 5456140674028019486] [Spotify | 1 Month | 2 | 4.7 | Music premium | No ads, HQ | Warranty 7 days | 5409048419211682843]`",
+            "`[Netflix | 1 Month | 3.5 | Premium account | No password change | 5456140674028019486] [Spotify | 1 Month | 2 | Music premium | Warranty 7 days | 5409048419211682843]`",
             reply_markup=utils.admin_cancel_keyboard(),
             parse_mode='Markdown'
         )
@@ -1302,10 +1304,10 @@ async def handle_admin_add_product(update: Update, context: ContextTypes.DEFAULT
     try:
         data = update.message.text.split(' | ')
 
-        if len(data) != 8:
+        if len(data) != 6:
             await update.message.reply_text(
-                "❌ Invalid format. Send 8 fields:\n"
-                "`Name | Duration | Price | Rating | Description | features | Note | Sticker Emoji ID`",
+                "❌ Invalid format. Send 6 fields:\n"
+                "`Name | Duration | Price | Description | Note | Sticker Emoji ID`",
                 parse_mode='Markdown'
             )
             return ADMIN_ADD_PRODUCT
@@ -1314,11 +1316,9 @@ async def handle_admin_add_product(update: Update, context: ContextTypes.DEFAULT
             data[0],
             data[1],
             float(data[2]),
-            float(data[3]),
+            data[3],
             data[4],
-            data[5],
-            data[6],
-            data[7]
+            data[5]
         )
 
         await update.message.reply_text(
@@ -1639,9 +1639,9 @@ async def cmd_addproduct_data(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         data = update.message.text.replace('/addproduct_data ', '').split(' | ')
 
-        if len(data) != 8:
+        if len(data) != 6:
             await update.message.reply_text(
-                "Usage: `/addproduct_data Name | Duration | Price | Rating | Description | features | Note | Sticker Emoji ID`",
+                "Usage: `/addproduct_data Name | Duration | Price | Description | Note | Sticker Emoji ID`",
                 parse_mode='Markdown'
             )
             return
@@ -1650,11 +1650,9 @@ async def cmd_addproduct_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             data[0],
             data[1],
             float(data[2]),
-            float(data[3]),
+            data[3],
             data[4],
-            data[5],
-            data[6],
-            data[7]
+            data[5]
         )
 
         await update.message.reply_text(msg, parse_mode='Markdown')
@@ -1780,14 +1778,28 @@ async def cmd_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
 
 
+
+
+async def setup_bot_commands(application):
+    """
+    Telegram app ke bottom-left Menu button mein /start command show karega.
+    User Menu -> /start click karega to bot ka main menu open ho jayega.
+    """
+    await application.bot.set_my_commands([
+        BotCommand("start", "Open main menu"),
+    ])
+
+
+
 # ══════════════════════════════════════════════════════════
 #   MAIN
 # ══════════════════════════════════════════════════════════
 
 def main() -> None:
-    application = ApplicationBuilder().token(config.TOKEN).build()
+    application = ApplicationBuilder().token(config.TOKEN).post_init(setup_bot_commands).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("menu", start))
     application.add_handler(CommandHandler("admin", admin_panel))
 
     application.add_handler(CommandHandler("addproduct_data", cmd_addproduct_data))

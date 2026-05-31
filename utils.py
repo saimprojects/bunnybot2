@@ -282,3 +282,12 @@ def admin_back_keyboard():
 def admin_cancel_keyboard():
     buttons = [back_btn("Cancel", callback_data='admin_panel_back', style="danger")]
     return build_menu(buttons, n_cols=1)
+
+
+
+def telegram_menu_note():
+    """
+    Bottom-left Telegram Menu button bot.py ke setup_bot_commands() se enable hota hai.
+    Is utils file mein inline menu keyboards already main_menu_keyboard() se handled hain.
+    """
+    return "Menu command is configured in bot.py via set_my_commands."
