@@ -31,6 +31,8 @@ def tg(emoji_id: str, fallback: str) -> str:
 
 CUSTOM_EMOJIS = {
     # start
+    "products": ("5456140674028019486", "🛍️"),
+    "purchase_history": ("5210956306952758910", "📜"),
     "welcome_star": ("5325547803936572038", "✨"),
     "choose_option": ("5406745015365943482", "👇"),
 
@@ -67,7 +69,9 @@ CUSTOM_EMOJIS = {
 
 
 def ce(name: str) -> str:
-    emoji_id, fallback = CUSTOM_EMOJIS[name]
+    emoji_id, fallback = CUSTOM_EMOJIS.get(name, ("", ""))
+    if not emoji_id:
+        return fallback
     return tg(emoji_id, fallback)
 
 
