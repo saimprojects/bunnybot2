@@ -1,9 +1,37 @@
 import database
 import json
+from html import escape as html_escape
 
 
 def tg(emoji_id, fallback):
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+# Custom emoji IDs
+EMOJIS = {
+    "product": "5231012545799666522",      # 📦
+    "wallet": "5409048419211682843",       # 💰
+    "date": "5413879192267805083",         # 📅
+    "sticker": "5406745015365943482",      # 🧩
+    "confirm": "5206607081334906820",      # ✅
+    "warning": "5210952531676504517",      # ⚠️ / ❌ style
+    "stats": "5231200819986047254",        # ⭐ / stats style
+    "name": "5461117441612462242",         # 👤 style fallback
+}
+
+
+def safe(value):
+    return html_escape(str(value)) if value is not None else ""
+
+
+def get_product_icon(emoji_id):
+    """
+    Product ka apna saved custom emoji ID use karega.
+    Agar database mein empty/None hai to default product emoji use karega.
+    """
+    if emoji_id and str(emoji_id).strip() and str(emoji_id).strip().lower() != "none":
+        return tg(str(emoji_id).strip(), "📦")
+    return tg(EMOJIS["product"], "📦")
 
 
 def get_product_details_message(product_id):
@@ -25,43 +53,36 @@ def get_product_details_message(product_id):
         emoji_id
     ) = product if len(product) > 9 else (*product, "")
 
-    features = json.loads(features_json) if features_json else []
+    try:
+        features = json.loads(features_json) if features_json else []
+    except Exception:
+        features = []
 
     features_text = (
-        "\n".join([f"✓ {feature}" for feature in features])
+        "\n".join([f"{tg(EMOJIS['confirm'], '✅')} {safe(feature)}" for feature in features])
         if features
         else "N/A"
     )
 
-    box_emoji = tg("5231012545799666522", "📦")
-    wallet_emoji = tg("5409048419211682843", "💰")
-    date_emoji = tg("5413879192267805083", "📅")
-    choose_emoji = tg("5406745015365943482", "🧩")
+    product_icon = get_product_icon(emoji_id)
 
     message = (
-        f"{box_emoji} <b>Product Details</b>\n\n"
+        f"{product_icon} <b>Product Details</b>\n\n"
 
-        f"🟢 <b>Name:</b> {name}\n"
-
-        f"{choose_emoji} <b>Sticker ID:</b> "
-        f"<code>{emoji_id if emoji_id else 'None'}</code>\n"
-
-        f"{date_emoji} <b>Duration:</b> {duration}\n"
-
-        f"{wallet_emoji} <b>Price:</b> {price} USDT\n"
-
-        f"{box_emoji} <b>Stock Available:</b> {stock}\n"
-
-        f"⭐ <b>Rating:</b> {rating}/5\n\n"
+        f"{product_icon} <b>Name:</b> {safe(name)}\n"
+        f"{tg(EMOJIS['date'], '📅')} <b>Duration:</b> {safe(duration)}\n"
+        f"{tg(EMOJIS['wallet'], '💰')} <b>Price:</b> {safe(price)} USDT\n"
+        f"{tg(EMOJIS['product'], '📦')} <b>Stock Available:</b> {safe(stock)}\n"
+        f"{tg(EMOJIS['stats'], '⭐')} <b>Rating:</b> {safe(rating)}/5\n\n"
 
         f"📝 <b>Description:</b>\n"
-        f"{description}\n\n"
+        f"{safe(description)}\n\n"
 
-        f"✅ <b>Features:</b>\n"
+        f"{tg(EMOJIS['confirm'], '✅')} <b>Features:</b>\n"
         f"{features_text}\n\n"
 
         f"⚠️ <b>Note:</b>\n"
-        f"{note}\n\n"
+        f"{safe(note)}\n\n"
 
         f"━━━━━━━━━━━━━━━━━━"
     )
