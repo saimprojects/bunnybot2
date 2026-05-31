@@ -71,35 +71,14 @@ def ce(name: str) -> str:
     return tg(emoji_id, fallback)
 
 
-
 def product_purchase_keyboard(product, button_style="success"):
     """
     Announcement/update message ke andar sirf isi specific product ka single colored button.
-    Button callback direct product_<id> par jayega.
+    utils.btn helper use hota hai, isi liye baqi colored buttons jaisa render hoga.
     """
-    if not product:
-        return None
+    return utils.product_update_purchase_keyboard(product, style=button_style)
 
-    product_id = product[0]
-    product_name = html_escape(str(product[1]))
-    product_emoji_id = product[9] if len(product) > 9 and product[9] else None
 
-    api_kwargs = {
-        "button_type": button_style
-    }
-
-    if product_emoji_id:
-        api_kwargs["icon_custom_emoji_id"] = str(product_emoji_id)
-
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                text=f"Buy {product_name}",
-                callback_data=f"product_{product_id}",
-                api_kwargs=api_kwargs
-            )
-        ]
-    ])
 
 
 def find_recent_product_by_name(product_name):
@@ -211,9 +190,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except (IndexError, ValueError):
                 pass
 
+    first_name = html_escape(user.first_name or "there")
+
     welcome_text = (
-        f"{ce('welcome_star')} <b>Bunny Tools</b> {ce('welcome_star')}\n\n"
-        f"Welcome! Choose an option below {ce('choose_option')}"
+        f"{ce('welcome_star')} <b>Welcome to Bunny Tools!</b> {ce('welcome_star')}\n\n"
+        f"Hey <b>{first_name}</b> 👋\n\n"
+        f"We offer premium digital products at the best prices with fast, secure, "
+        f"and fully automated delivery.\n\n"
+        f"<blockquote>"
+        f"{ce('products')} <b>Products</b> — Browse & buy products\n"
+        f"{ce('wallet')} <b>Wallet</b> — Deposit funds and pay faster\n"
+        f"{ce('profile')} <b>Profile</b> — Balance, orders and referrals\n"
+        f"{ce('support_center')} <b>Support</b> — Get help anytime"
+        f"</blockquote>\n\n"
+        f"{ce('choose_option')} Choose an option below:"
     )
 
     if update.message:

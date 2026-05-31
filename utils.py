@@ -76,16 +76,46 @@ def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
 # ─── USER KEYBOARDS ───────────────────────────────────────
 
 def main_menu_keyboard():
-    buttons = [
-        btn("Products", callback_data='products', style="success", emoji_id=EMOJIS["products"]),
-        btn("Profile", callback_data='profile', style="primary", emoji_id=EMOJIS["profile"]),
-        btn("Purchase History", callback_data='purchase_history', style="danger", emoji_id=EMOJIS["purchase_history"]),
-        btn("Wallet", callback_data='wallet', style="success", emoji_id=EMOJIS["wallet"]),
-        btn("Order Details", callback_data='order_details', style="primary", emoji_id=EMOJIS["order_details"]),
-        btn("Support", callback_data='support', style="danger", emoji_id=EMOJIS["support"]),
+    keyboard = [
+        [
+            btn(
+                "Products",
+                callback_data='products',
+                style="success",
+                emoji_id=EMOJIS["products"]
+            )
+        ],
+        [
+            btn(
+                "Profile",
+                callback_data='profile',
+                style="primary",
+                emoji_id=EMOJIS["profile"]
+            ),
+            btn(
+                "Purchase History",
+                callback_data='purchase_history',
+                style="danger",
+                emoji_id=EMOJIS["purchase_history"]
+            ),
+        ],
+        [
+            btn(
+                "Wallet",
+                callback_data='wallet',
+                style="success",
+                emoji_id=EMOJIS["wallet"]
+            ),
+            btn(
+                "Support",
+                callback_data='support',
+                style="danger",
+                emoji_id=EMOJIS["support"]
+            ),
+        ],
     ]
-    return build_menu(buttons, n_cols=2)
 
+    return InlineKeyboardMarkup(keyboard)
 
 def products_list_keyboard(products):
     buttons = []
@@ -190,6 +220,32 @@ def support_keyboard():
         back_btn("Back", callback_data='main_menu', style="danger"),
     ]
     return build_menu(buttons, n_cols=1)
+
+
+
+def product_update_purchase_keyboard(product, style="success"):
+    """
+    Auto announcement/update message ke liye sirf specific product ka single colored button.
+    """
+    if not product:
+        return None
+
+    product_id = product[0]
+    product_name = product[1]
+    product_emoji_id = product[9] if len(product) > 9 and product[9] else None
+
+    keyboard = [
+        [
+            btn(
+                f"Buy {product_name}",
+                callback_data=f"product_{product_id}",
+                style=style,
+                emoji_id=product_emoji_id or EMOJIS["products"]
+            )
+        ]
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
 
 
 # ─── ADMIN KEYBOARDS ──────────────────────────────────────
