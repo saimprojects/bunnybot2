@@ -3,26 +3,28 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 EMOJIS = {
-    # /start main menu buttons
     "products": "5456140674028019486",
     "purchase_history": "5210956306952758910",
     "profile": "5253742260054409879",
     "support": "5443038326535759644",
     "wallet": "5409048419211682843",
     "order_details": "5282843764451195532",
-
-    # wallet buttons
+    "welcome_star": "5325547803936572038",
+    "choose_option": "5406745015365943482",
     "deposit": "5397916757333654639",
     "withdraw": "5402186569006210455",
-
-    # universal back button
     "back": "5416117059207572332",
-
-    # support buttons
+    "confirm": "5206607081334906820",
+    "cancel": "5210952531676504517",
+    "order": "5406683434124859552",
     "faq": "5314504236132747481",
     "announcement": "5395695537687123235",
+    "edit_stock": "5451882707875276247",
+    "delete": "5445267414562389170",
+    "broadcast": "5424818078833715060",
+    "stats": "5231200819986047254",
+    "view_products": "5231012545799666522",
 }
-
 
 def generate_order_id():
     return "ORD" + str(uuid.uuid4())[:8].upper()
@@ -115,7 +117,7 @@ def products_list_keyboard(products):
 
 def product_details_keyboard():
     buttons = [
-        btn("Order Now", callback_data='order_now', style="success"),
+        btn("Order Now", callback_data='order_now', style="success", emoji_id=EMOJIS["order"]),
         back_btn("Back to Products", callback_data='products', style="danger"),
     ]
     return build_menu(buttons, n_cols=1)
@@ -137,16 +139,16 @@ def payment_method_keyboard():
 
 def binance_payment_keyboard():
     buttons = [
-        btn("✅ I have sent the payment", callback_data='check_binance_payment', style="success"),
-        btn("❌ Cancel Order", callback_data='cancel_order', style="danger"),
+        btn("I have sent the payment", callback_data='check_binance_payment', style="success", emoji_id=EMOJIS["confirm"]),
+        btn("Cancel Order", callback_data='cancel_order', style="danger", emoji_id=EMOJIS["cancel"]),
     ]
     return build_menu(buttons, n_cols=1)
 
 
 def wallet_payment_keyboard():
     buttons = [
-        btn("Confirm & Pay", callback_data='confirm_wallet_payment', style="success", emoji_id=EMOJIS["wallet"]),
-        btn("❌ Cancel", callback_data='cancel_order', style="danger"),
+        btn("Confirm & Pay", callback_data='confirm_wallet_payment', style="success", emoji_id=EMOJIS["confirm"]),
+        btn("Cancel", callback_data='cancel_order', style="danger", emoji_id=EMOJIS["cancel"]),
     ]
     return build_menu(buttons, n_cols=1)
 
@@ -174,7 +176,7 @@ def wallet_options_keyboard():
 
 def deposit_wallet_keyboard():
     buttons = [
-        btn("✅ I have sent the payment", callback_data='check_deposit_payment', style="success"),
+        btn("I have sent the payment", callback_data='check_deposit_payment', style="success", emoji_id=EMOJIS["confirm"]),
         back_btn("Back", callback_data='wallet', style="danger"),
     ]
     return build_menu(buttons, n_cols=1)
@@ -194,20 +196,20 @@ def support_keyboard():
 
 def admin_main_keyboard():
     buttons = [
-        btn("➕ Add Product", callback_data='admin_add_product', style="success"),
-        btn("➕ Bulk Products", callback_data='admin_bulk_add_products', style="success"),
-        btn("📦 Add Stock/Items", callback_data='admin_add_items', style="primary"),
-        btn("💲 Edit Price", callback_data='admin_edit_price', style="primary"),
-        btn("🔢 Edit Stock", callback_data='admin_edit_stock', style="primary"),
-        btn("💰 Add Balance", callback_data='admin_add_balance', style="success"),
-        btn("✅ Approve Withdrawal", callback_data='admin_approve_withdrawal', style="success"),
-        btn("📢 Broadcast", callback_data='admin_broadcast', style="danger"),
-        btn("🗑️ Delete Product", callback_data='admin_delete_product', style="danger"),
-        btn("🔎 Order Details", callback_data='admin_order_details', style="primary"),
-        btn("📜 View Products", callback_data='admin_view_products', style="primary"),
-        btn("📝 All Orders", callback_data='admin_view_all_orders', style="primary"),
-        btn("💸 Withdrawals", callback_data='admin_withdraw_requests', style="danger"),
-        btn("📊 Stats", callback_data='admin_view_stats', style="success"),
+        btn("Add Product", callback_data='admin_add_product', style="success", emoji_id=EMOJIS["deposit"]),
+        btn("Bulk Products", callback_data='admin_bulk_add_products', style="success", emoji_id=EMOJIS["deposit"]),
+        btn("Add Stock/Items", callback_data='admin_add_items', style="primary", emoji_id=EMOJIS["view_products"]),
+        btn("Edit Price", callback_data='admin_edit_price', style="primary", emoji_id=EMOJIS["wallet"]),
+        btn("Edit Stock", callback_data='admin_edit_stock', style="primary", emoji_id=EMOJIS["edit_stock"]),
+        btn("Add Balance", callback_data='admin_add_balance', style="success", emoji_id=EMOJIS["deposit"]),
+        btn("Approve Withdrawal", callback_data='admin_approve_withdrawal', style="success", emoji_id=EMOJIS["confirm"]),
+        btn("Broadcast", callback_data='admin_broadcast', style="danger", emoji_id=EMOJIS["broadcast"]),
+        btn("Delete Product", callback_data='admin_delete_product', style="danger", emoji_id=EMOJIS["delete"]),
+        btn("Order Details", callback_data='admin_order_details', style="primary", emoji_id=EMOJIS["order_details"]),
+        btn("View Products", callback_data='admin_view_products', style="primary", emoji_id=EMOJIS["view_products"]),
+        btn("All Orders", callback_data='admin_view_all_orders', style="primary", emoji_id=EMOJIS["order"]),
+        btn("Withdrawals", callback_data='admin_withdraw_requests', style="danger", emoji_id=EMOJIS["withdraw"]),
+        btn("Stats", callback_data='admin_view_stats', style="success", emoji_id=EMOJIS["stats"]),
     ]
     return build_menu(buttons, n_cols=2)
 

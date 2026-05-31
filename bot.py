@@ -23,16 +23,38 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+
+def ce(name, fallback=""):
+    """Return a readable fallback emoji. Button custom emoji IDs are applied in utils.py."""
+    return fallback
+
+
 async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text: str, parse_mode: str = "Markdown"):
-    for admin_id in config.ADMIN_IDS:
+    try:
+        await context.bot.send_message(
+            chat_id=config.ADMIN_ID,
+            text=text,
+            parse_mode=parse_mode
+        )
+    except Exception as e:
+        logger.error(f"Failed to notify admin {config.ADMIN_ID}: {e}")
+
+
+async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, reply_markup=None, parse_mode: str = "Markdown"):
+    users = database.get_all_users()
+    sent = 0
+    for user in users:
         try:
             await context.bot.send_message(
-                chat_id=admin_id,
+                chat_id=user[0],
                 text=text,
+                reply_markup=reply_markup,
                 parse_mode=parse_mode
             )
-        except Exception as e:
-            logger.error(f"Failed to notify admin {admin_id}: {e}")
+            sent += 1
+        except Exception:
+            pass
+    return sent, len(users)
 
 
 (
@@ -83,8 +105,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 pass
 
     welcome_text = (
-        "🌟 *Bunny Tools* 🌟\n\n"
-        "Welcome! Choose an option below 👇"
+        f"{ce('welcome_star', '✨')} *Bunny Tools* {ce('welcome_star', '✨')}\n\n"
+        f"Welcome! Choose an option below {ce('choose_option', '👇')}"
     )
 
     if update.message:
@@ -115,17 +137,17 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=
     else:
         bot_username = (await context.bot.get_me()).username
         text = (
-            f"👤 *My Profile*\n\n"
-            f"🆔 ID: `{user[0]}`\n"
-            f"📛 Username: @{user[1] if user[1] else 'Unknown'}\n"
-            f"📅 Joined: {user[2]}\n\n"
+            f"{ce('profile_text', '👤')} *My Profile*\n\n"
+            f"{ce('id', '🆔')} ID: `{user[0]}`\n"
+            f"{ce('username', '📛')} Username: @{user[1] if user[1] else 'Unknown'}\n"
+            f"{ce('date', '📅')} Joined: {user[2]}\n\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"💰 Wallet Balance: {user[3]} USDT\n"
-            f"📦 Total Orders: {user[4]}\n"
+            f"{ce('wallet', '💰')} Wallet Balance: {user[3]} USDT\n"
+            f"{ce('view_products', '📦')} Total Orders: {user[4]}\n"
             f"👥 Referrals: {user[5]}\n"
-            f"🎁 Referral Earnings: {user[6]} USDT\n"
+            f"{ce('gift', '🎁')} Referral Earnings: {user[6]} USDT\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"🔗 *Your Referral Link:*\n"
+            f"{ce('link', '🔗')} *Your Referral Link:*\n"
             f"`t.me/{bot_username}?start=ref_{user[0]}`\n\n"
             f"👥 *Refer & Earn:* 10% commission"
         )
@@ -148,7 +170,7 @@ async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TY
         text = (
             "📭 *No Orders Yet*\n\n"
             "You haven't made any purchases yet.\n\n"
-            "👉 Go to *Products* to buy something."
+            f"{ce('back', '👉')} Go to *Products* to buy something."
         )
     else:
         text = "📜 *Purchase History*\n\n"
@@ -208,7 +230,7 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif text == "🔎 Order Details":
         await update.message.reply_text(
-            "🔎 *Order Details*\n\nPlease send your Order ID:",
+            f"{ce('view_products', '🔎')} *Order Details*\n\nPlease send your Order ID:",
             parse_mode='Markdown'
         )
         context.user_data['waiting_for_order_details'] = True
@@ -218,10 +240,10 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
         transactions = database.get_user_transactions(user_id)
 
         msg = (
-            f"💰 *My Wallet*\n\n"
-            f"💎 Balance: *{user[3]} USDT*\n\n"
+            f"{ce('wallet', '💰')} *My Wallet*\n\n"
+            f"{ce('id', '💎')} Balance: *{user[3]} USDT*\n\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"📊 *Recent Transactions:*\n"
+            f"{ce('stats', '📊')} *Recent Transactions:*\n"
             f"━━━━━━━━━━━━━━━━━━\n"
         )
 
@@ -232,7 +254,7 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
         else:
             msg += "No recent transactions.\n"
 
-        msg += "━━━━━━━━━━━━━━━━━━\n\n👇 *Options:*"
+        msg += f"━━━━━━━━━━━━━━━━━━\n\n{ce('choose_option', '👇')} *Options:*"
 
         await update.message.reply_text(
             msg,
@@ -242,12 +264,12 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif text == "🆘 Support":
         msg = (
-            f"🆘 *Support Center*\n\n"
-            f"📖 *FAQ* — Common questions\n"
-            f"💬 *Contact Admin* — Message to owner\n"
-            f"🔔 *Announcements* — Join our channel\n\n"
+            f"{ce('announcement', '🆘')} *Support Center*\n\n"
+            f"{ce('faq', '📖')} *FAQ* — Common questions\n"
+            f"{ce('support', '💬')} *Contact Admin* — Message to owner\n"
+            f"{ce('broadcast', '🔔')} *Announcements* — Join our channel\n\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"👇 Choose option:"
+            f"{ce('choose_option', '👇')} Choose option:"
         )
 
         await update.message.reply_text(
@@ -299,7 +321,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif data == 'order_details':
         await query.edit_message_text(
-            "🔎 *Order Details*\n\nPlease send your Order ID:",
+            f"{ce('view_products', '🔎')} *Order Details*\n\nPlease send your Order ID:",
             reply_markup=utils.main_menu_keyboard(),
             parse_mode='Markdown'
         )
@@ -497,10 +519,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         transactions = database.get_user_transactions(user_id)
 
         text = (
-            f"💰 *My Wallet*\n\n"
-            f"💎 Balance: *{user[3]} USDT*\n\n"
+            f"{ce('wallet', '💰')} *My Wallet*\n\n"
+            f"{ce('id', '💎')} Balance: *{user[3]} USDT*\n\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"📊 *Recent Transactions:*\n"
+            f"{ce('stats', '📊')} *Recent Transactions:*\n"
             f"━━━━━━━━━━━━━━━━━━\n"
         )
 
@@ -511,7 +533,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         else:
             text += "No recent transactions.\n"
 
-        text += "━━━━━━━━━━━━━━━━━━\n\n👇 *Options:*"
+        text += f"━━━━━━━━━━━━━━━━━━\n\n{ce('choose_option', '👇')} *Options:*"
 
         await query.edit_message_text(
             text,
@@ -565,12 +587,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif data == 'support':
         await query.edit_message_text(
-            "🆘 *Support Center*\n\n"
-            "📖 *FAQ* — Common questions\n"
-            "💬 *Contact Admin* — Message to owner\n"
-            "🔔 *Announcements* — Join our channel\n\n"
+            f"{ce('announcement', '🆘')} *Support Center*\n\n"
+            f"{ce('faq', '📖')} *FAQ* — Common questions\n"
+            f"{ce('support', '💬')} *Contact Admin* — Message to owner\n"
+            f"{ce('broadcast', '🔔')} *Announcements* — Join our channel\n\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "👇 Choose option:",
+            f"{ce('choose_option', '👇')} Choose option:",
             reply_markup=utils.support_keyboard(),
             parse_mode='Markdown'
         )
@@ -1186,6 +1208,20 @@ async def handle_admin_add_product(update: Update, context: ContextTypes.DEFAULT
             parse_mode='Markdown'
         )
 
+        if msg.startswith("✅"):
+            await broadcast_to_all_users(
+                context,
+                (
+                    f"📢 *New Product Added!*\n\n"
+                    f"📦 Product: *{data[0]}*\n"
+                    f"💰 Price: *{data[2]} USDT*\n"
+                    f"📦 Stock: *0*\n\n"
+                    f"👇 Check it now!"
+                ),
+                reply_markup=utils.products_list_keyboard(database.get_all_products()),
+                parse_mode='Markdown'
+            )
+
     except Exception as e:
         await update.message.reply_text(
             f"❌ Error: {e}",
@@ -1208,6 +1244,14 @@ async def handle_admin_bulk_add_products(update: Update, context: ContextTypes.D
             reply_markup=utils.admin_main_keyboard(),
             parse_mode='Markdown'
         )
+
+        if msg.startswith("✅"):
+            await broadcast_to_all_users(
+                context,
+                "📢 *New Products Added!*\n\n👇 Check products now!",
+                reply_markup=utils.products_list_keyboard(database.get_all_products()),
+                parse_mode='Markdown'
+            )
 
     except Exception as e:
         await update.message.reply_text(
@@ -1232,6 +1276,23 @@ async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode='Markdown'
         )
 
+        if msg.startswith("📦"):
+            for product_id, items_data in stock_sections:
+                product = database.get_product(product_id)
+                if product:
+                    await broadcast_to_all_users(
+                        context,
+                        (
+                            f"📢 *Stock Updated!*\n\n"
+                            f"📦 Product: *{product[1]}*\n"
+                            f"✅ New Stock Added: *{len(items_data)}*\n"
+                            f"📦 Available Now: *{product[4]}*\n\n"
+                            f"👇 Buy now!"
+                        ),
+                        reply_markup=utils.products_list_keyboard(database.get_all_products()),
+                        parse_mode='Markdown'
+                    )
+
     except Exception as e:
         await update.message.reply_text(
             f"❌ Error: {e}",
@@ -1247,6 +1308,7 @@ async def handle_admin_edit_price(update: Update, context: ContextTypes.DEFAULT_
 
     try:
         product_id, price = update.message.text.split()
+        product_before = database.get_product(int(product_id))
         msg = admin.edit_product_price(int(product_id), float(price))
 
         await update.message.reply_text(
@@ -1254,6 +1316,19 @@ async def handle_admin_edit_price(update: Update, context: ContextTypes.DEFAULT_
             reply_markup=utils.admin_main_keyboard(),
             parse_mode='Markdown'
         )
+
+        if msg.startswith("✅") and product_before:
+            await broadcast_to_all_users(
+                context,
+                (
+                    f"📢 *Price Updated!*\n\n"
+                    f"📦 Product: *{product_before[1]}*\n"
+                    f"💰 New Price: *{price} USDT*\n\n"
+                    f"👇 Check it now!"
+                ),
+                reply_markup=utils.products_list_keyboard(database.get_all_products()),
+                parse_mode='Markdown'
+            )
 
     except Exception as e:
         await update.message.reply_text(
@@ -1270,6 +1345,7 @@ async def handle_admin_edit_stock(update: Update, context: ContextTypes.DEFAULT_
 
     try:
         product_id, stock = update.message.text.split()
+        product_before = database.get_product(int(product_id))
         msg = admin.edit_product_stock(int(product_id), int(stock))
 
         await update.message.reply_text(
@@ -1277,6 +1353,19 @@ async def handle_admin_edit_stock(update: Update, context: ContextTypes.DEFAULT_
             reply_markup=utils.admin_main_keyboard(),
             parse_mode='Markdown'
         )
+
+        if msg.startswith("✅") and product_before:
+            await broadcast_to_all_users(
+                context,
+                (
+                    f"📢 *Stock Updated!*\n\n"
+                    f"📦 Product: *{product_before[1]}*\n"
+                    f"📦 Available Now: *{stock}*\n\n"
+                    f"👇 Buy now!"
+                ),
+                reply_markup=utils.products_list_keyboard(database.get_all_products()),
+                parse_mode='Markdown'
+            )
 
     except Exception as e:
         await update.message.reply_text(

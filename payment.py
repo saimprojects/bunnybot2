@@ -3,18 +3,14 @@ import config
 import time
 import random
 
-def process_binance_payment(user_id, order_id, product_id, quantity, total_amount):
-    """
-    Real project mein yahan Binance API se payment verify hogi.
-    Abhi simulation hai — 80% success rate.
-    """
-    print(f"[Binance] Checking payment for user {user_id}, amount {total_amount} USDT")
-    time.sleep(2)  # Network delay simulate
 
+def process_binance_payment(user_id, order_id, product_id, quantity, total_amount):
+    print(f"[Binance] Checking payment for user {user_id}, amount {total_amount} USDT")
+    time.sleep(2)
     if random.random() > 0.2:
         return True, "Payment confirmed successfully."
-    else:
-        return False, "❌ Payment not found. Please try again or contact support."
+    return False, "❌ Payment not found. Please try again or contact support."
+
 
 def process_wallet_payment(user_id, order_id, product_id, quantity, total_amount):
     user = database.get_user(user_id)
@@ -27,14 +23,15 @@ def process_wallet_payment(user_id, order_id, product_id, quantity, total_amount
         database.update_user_wallet(user_id, -total_amount)
         database.add_transaction(user_id, "Purchase", -total_amount)
         return True, "Payment successful using wallet."
-    else:
-        required = round(total_amount - current_balance, 4)
-        return False, (
-            f"❌ *Insufficient Balance*\n\n"
-            f"Your Balance: {current_balance} USDT\n"
-            f"Required: {total_amount} USDT\n"
-            f"Short by: {required} USDT"
-        )
+
+    required = round(total_amount - current_balance, 4)
+    return False, (
+        f"❌ *Insufficient Balance*\n\n"
+        f"Your Balance: {current_balance} USDT\n"
+        f"Required: {total_amount} USDT\n"
+        f"Short by: {required} USDT"
+    )
+
 
 def get_binance_payment_details(total_amount):
     return (
@@ -45,6 +42,7 @@ def get_binance_payment_details(total_amount):
         f"⏳ Payment auto-detect hoga ~30 seconds mein\n\n"
         f"━━━━━━━━━━━━━━━━━━"
     )
+
 
 def get_wallet_payment_summary(user_id, total_amount):
     user = database.get_user(user_id)

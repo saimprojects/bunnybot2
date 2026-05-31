@@ -6,7 +6,7 @@ import re
 
 def is_admin(user_id):
     try:
-        return int(user_id) in config.ADMIN_IDS
+        return int(user_id) == int(config.ADMIN_ID)
     except Exception:
         return False
 
