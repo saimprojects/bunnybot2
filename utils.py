@@ -214,8 +214,13 @@ def deposit_wallet_keyboard():
 def support_keyboard():
     buttons = [
         btn("FAQ", callback_data='faq', style="primary", emoji_id=EMOJIS["faq"]),
-        btn("Contact Admin", callback_data='contact_admin', style="success", emoji_id=EMOJIS["support"]),
-        btn("Announcements", url='https://t.me/your_channel', style="primary", emoji_id=EMOJIS["announcement"]),
+        btn(
+    "Contact Support",
+    url="https://t.me/@Bunnyhaccks",
+    style="success",
+    emoji_id=EMOJIS["support"]
+),
+        btn("Announcements", url='https://t.me/bunnyhackss', style="primary", emoji_id=EMOJIS["announcement"]),
         back_btn("Back", callback_data='main_menu', style="danger"),
     ]
     return build_menu(buttons, n_cols=1)
