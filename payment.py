@@ -31,7 +31,10 @@ def get_binance_pay_id():
     BINANCE_PAY_ID env mein apni Binance ID / Pay ID set karo.
     Fallback BINANCE_WALLET_ADDRESS rakha hai taake purana config bhi work kare.
     """
-    return getattr(config, "BINANCE_PAY_ID", "") or getattr(config, "BINANCE_WALLET_ADDRESS", "")
+    return (
+        getattr(config, "BINANCE_PAY_ID", "")
+        or getattr(config, "BINANCE_WALLET_ADDRESS", "")
+    ).strip()
 
 
 def sign_query(params):
@@ -39,9 +42,10 @@ def sign_query(params):
     Binance signed endpoint ke liye HMAC SHA256 query signature.
     /sapi/v1/pay/transactions standard Binance signed endpoint hai.
     """
+    secret = config.BINANCE_API_SECRET.strip()
     query = urllib.parse.urlencode(params)
     signature = hmac.new(
-        config.BINANCE_API_SECRET.encode("utf-8"),
+        secret.encode("utf-8"),
         query.encode("utf-8"),
         hashlib.sha256
     ).hexdigest()
@@ -49,7 +53,10 @@ def sign_query(params):
 
 
 def binance_signed_get(path, params):
-    if not config.BINANCE_API_KEY or not config.BINANCE_API_SECRET:
+    api_key = config.BINANCE_API_KEY.strip()
+    api_secret = config.BINANCE_API_SECRET.strip()
+
+    if not api_key or not api_secret:
         return False, "BINANCE_API_KEY / BINANCE_API_SECRET missing."
 
     params["timestamp"] = int(time.time() * 1000)
@@ -61,7 +68,7 @@ def binance_signed_get(path, params):
     req = urllib.request.Request(
         url,
         headers={
-            "X-MBX-APIKEY": config.BINANCE_API_KEY,
+            "X-MBX-APIKEY": api_key,
             "Content-Type": "application/json",
         },
         method="GET"
@@ -109,7 +116,7 @@ def get_transaction_amount_usdt(tx):
     """
     # Direct amount/currency
     try:
-        currency = str(tx.get("currency", "")).upper()
+        currency = str(tx.get("currency", "")).upper().strip()
         amount = float(tx.get("amount", 0))
         if currency in ("USDT", "USD"):
             return amount
@@ -119,7 +126,7 @@ def get_transaction_amount_usdt(tx):
     # fundsDetail list
     for item in tx.get("fundsDetail", []) or []:
         try:
-            currency = str(item.get("currency", "")).upper()
+            currency = str(item.get("currency", "")).upper().strip()
             amount = float(item.get("amount", 0))
             if currency in ("USDT", "USD"):
                 return amount
@@ -136,7 +143,7 @@ def receiver_matches_our_binance_id(tx):
     Agar API own account ka history de raha hai aur receiverInfo missing/different hai,
     is check ko soft rakha gaya hai.
     """
-    our_id = str(get_binance_pay_id()).strip()
+    our_id = get_binance_pay_id()
     if not our_id:
         return True
 
@@ -169,7 +176,6 @@ def find_binance_payment_reference(reference, expected_amount, minutes_order=10,
     ref = str(reference).strip()
     expected = float(expected_amount)
 
-    # screenshot jaisa: order ID last 10 min, off-chain ref last 5 min.
     ok, result = get_pay_trade_history(minutes=minutes_order, limit=100)
 
     if not ok:
@@ -182,11 +188,7 @@ def find_binance_payment_reference(reference, expected_amount, minutes_order=10,
     now_ms = int(time.time() * 1000)
     offchain_start = now_ms - (minutes_offchain * 60 * 1000)
 
-    checked = 0
-
     for tx in txs:
-        checked += 1
-
         tx_time = int(tx.get("transactionTime", 0) or tx.get("createTime", 0) or 0)
 
         possible_refs = [
@@ -202,8 +204,6 @@ def find_binance_payment_reference(reference, expected_amount, minutes_order=10,
         possible_refs = [str(x).strip() for x in possible_refs if x is not None]
 
         exact_ref_match = ref in possible_refs
-
-        # Off-chain reference ke liye recent 5 min check.
         offchain_match = exact_ref_match and (not tx_time or tx_time >= offchain_start)
 
         if not exact_ref_match and not offchain_match:
@@ -217,7 +217,6 @@ def find_binance_payment_reference(reference, expected_amount, minutes_order=10,
         if amount is None:
             return False, "Transaction found, but USDT amount could not be read."
 
-        # Receiver side income should normally be positive.
         if amount < expected:
             return False, f"Transaction found but amount {amount} is less than required {expected}."
 
@@ -232,7 +231,7 @@ def find_binance_payment_reference(reference, expected_amount, minutes_order=10,
 
 def process_binance_payment(user_id, order_id, product_id, quantity, total_amount, binance_order_id=None):
     """
-    User Binance ID / Pay ID par payment bhejta hai.
+    User Binance Pay ID par payment bhejta hai.
     Phir user jo Binance Order ID / off-chain transaction reference bhejta hai,
     bot Binance Pay trade history se auto verify karta hai.
     """
@@ -296,8 +295,6 @@ def get_binance_payment_details(total_amount):
     )
 
 
-
-
 def get_binance_wallet_deposit_details(amount):
     binance_id = get_binance_pay_id()
 
@@ -340,6 +337,7 @@ def process_wallet_deposit_binance(user_id, amount, binance_order_id=None):
         f"{tg(EMOJIS['cancel'], '❌')} <b>Deposit not verified.</b>\n\n"
         f"{safe(msg)}"
     )
+
 
 def get_wallet_payment_summary(user_id, total_amount):
     user = database.get_user(user_id)
