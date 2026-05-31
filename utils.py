@@ -210,19 +210,31 @@ def order_confirmed_keyboard():
 
 
 def wallet_options_keyboard():
-    buttons = [
-        btn("Deposit", callback_data='deposit_wallet', style="success", emoji_id=EMOJIS["deposit"]),
-    ]
-    return build_menu(buttons, n_cols=2, footer_buttons=[back_btn("Back", callback_data='main_menu')])
-
+    return build_menu([
+        btn(
+            "Deposit with Binance Pay ID",
+            callback_data="deposit_wallet",
+            style="success",
+            emoji_id=EMOJIS["deposit"]
+        ),
+    ], n_cols=1, footer_buttons=[
+        back_btn("Back", callback_data="main_menu")
+    ])
 
 def deposit_wallet_keyboard():
-    buttons = [
-        btn("I have sent the payment", callback_data='check_deposit_payment', style="success", emoji_id=EMOJIS["confirm"]),
-        back_btn("Back", callback_data='wallet', style="danger"),
-    ]
-    return build_menu(buttons, n_cols=1)
-
+    return build_menu([
+        btn(
+            "I have sent payment",
+            callback_data="check_deposit_payment",
+            style="success",
+            emoji_id=EMOJIS["confirm"]
+        ),
+        back_btn(
+            "Back",
+            callback_data="wallet",
+            style="danger"
+        ),
+    ], n_cols=1)
 
 def support_keyboard():
     buttons = [

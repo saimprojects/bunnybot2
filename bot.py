@@ -153,6 +153,8 @@ async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, 
     WITHDRAW_ADDRESS,
     CONTACT_ADMIN,
     BINANCE_ORDER_ID,
+    WALLET_DEPOSIT_REF,
+    WALLET_DEPOSIT_AMOUNT,
     ORDER_DETAILS,
     ADMIN_ORDER_DETAILS,
     ADMIN_ADD_PRODUCT,
@@ -164,7 +166,7 @@ async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, 
     ADMIN_BROADCAST,
     ADMIN_DELETE_PRODUCT,
     ADMIN_BULK_ADD_PRODUCTS,
-) = range(16)
+) = range(18)
 
 
 # ══════════════════════════════════════════════════════════
@@ -619,34 +621,36 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
 
     elif data == 'deposit_wallet':
-        text = (
-            f"💰 *Deposit Funds*\n\n"
-            f"Send USDT to this address:\n\n"
-            f"📍 `{config.BINANCE_WALLET_ADDRESS}`\n\n"
-            f"🔁 Network: {config.BINANCE_NETWORK} \\(USDT\\)\n"
-            f"💵 Minimum: 10 USDT\n\n"
-            f"━━━━━━━━━━━━━━━━━━"
-        )
-
         await query.edit_message_text(
-            text,
+            f"{ce('wallet')} <b>Wallet Deposit</b>\n\n"
+            "Enter amount to top up with Binance Pay ID.\n"
+            "Example: <code>10.5</code>",
             reply_markup=utils.deposit_wallet_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
-        return ConversationHandler.END
+        return WALLET_DEPOSIT_AMOUNT
 
     elif data == 'check_deposit_payment':
-        await query.edit_message_text(
-            "✅ Deposit request sent to admin.\nBalance will be updated once confirmed.",
-            reply_markup=utils.wallet_options_keyboard()
-        )
+        deposit_amount = context.user_data.get('wallet_deposit_amount')
 
-        await notify_admins(
-            context,
-            f"⚠️ User `{user_id}` claims deposit.\nUse: `/addbalance {user_id} <amount>`",
-            parse_mode='Markdown'
+        if not deposit_amount:
+            await query.edit_message_text(
+                f"{ce('wallet')} <b>Wallet Deposit</b>\n\n"
+                "Please enter deposit amount first.\n"
+                "Example: <code>10.5</code>",
+                reply_markup=utils.deposit_wallet_keyboard(),
+                parse_mode='HTML'
+            )
+            return WALLET_DEPOSIT_AMOUNT
+
+        await query.edit_message_text(
+            "✅ <b>Payment Sent?</b>\n\n"
+            "Send your <b>Binance Order ID / off-chain transaction reference</b> here.\n\n"
+            "Example: <code>M_P_71505104267788288</code>",
+            reply_markup=utils.deposit_wallet_keyboard(),
+            parse_mode='HTML'
         )
-        return ConversationHandler.END
+        return WALLET_DEPOSIT_REF
 
     elif data == 'withdraw_wallet':
         user = database.get_user(user_id)
@@ -703,6 +707,70 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ══════════════════════════════════════════════════════════
 #   USER CONVERSATION HANDLERS
 # ══════════════════════════════════════════════════════════
+
+async def handle_wallet_deposit_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        amount = float(update.message.text.strip())
+
+        if amount <= 0:
+            await update.message.reply_text(
+                "❌ Please enter a valid amount greater than 0.",
+                reply_markup=utils.deposit_wallet_keyboard()
+            )
+            return WALLET_DEPOSIT_AMOUNT
+
+        context.user_data['wallet_deposit_amount'] = amount
+
+        await update.message.reply_text(
+            payment.get_binance_wallet_deposit_details(amount),
+            reply_markup=utils.deposit_wallet_keyboard(),
+            parse_mode='HTML'
+        )
+
+        return ConversationHandler.END
+
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Invalid amount. Example: 10.5",
+            reply_markup=utils.deposit_wallet_keyboard()
+        )
+        return WALLET_DEPOSIT_AMOUNT
+
+
+async def handle_wallet_deposit_ref(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    reference = update.message.text.strip()
+    amount = context.user_data.get('wallet_deposit_amount')
+
+    if not amount:
+        await update.message.reply_text(
+            "❌ Deposit amount missing. Please start deposit again.",
+            reply_markup=utils.wallet_options_keyboard()
+        )
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        "⏳ Checking Binance Pay history... Please wait.",
+        parse_mode='HTML'
+    )
+
+    success, msg = payment.process_wallet_deposit_binance(
+        user_id=user_id,
+        amount=amount,
+        binance_order_id=reference
+    )
+
+    if success:
+        context.user_data.pop('wallet_deposit_amount', None)
+
+    await update.message.reply_text(
+        msg,
+        reply_markup=utils.wallet_options_keyboard(),
+        parse_mode='HTML'
+    )
+
+    return ConversationHandler.END
+
 
 async def handle_binance_order_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     binance_order_id = update.message.text.strip()
@@ -1834,6 +1902,12 @@ def main() -> None:
             ],
             BINANCE_ORDER_ID: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_binance_order_id)
+            ],
+            WALLET_DEPOSIT_AMOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_wallet_deposit_amount)
+            ],
+            WALLET_DEPOSIT_REF: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_wallet_deposit_ref)
             ],
             ORDER_DETAILS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_order_details)

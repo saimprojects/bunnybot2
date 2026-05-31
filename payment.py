@@ -296,6 +296,51 @@ def get_binance_payment_details(total_amount):
     )
 
 
+
+
+def get_binance_wallet_deposit_details(amount):
+    binance_id = get_binance_pay_id()
+
+    return (
+        f"{tg(EMOJIS['binance'], '💳')} <b>Wallet Deposit via Binance Pay ID</b>\n\n"
+        f"Binance ID (tap to copy):\n"
+        f"<code>{safe(binance_id)}</code>\n\n"
+        f"Amount to transfer: <b>${safe(amount)}</b>\n\n"
+        f"After payment, click <b>I have sent payment</b>.\n"
+        f"Then send your <b>Binance Order ID</b> or <b>off-chain transaction reference</b> for auto verification.\n\n"
+        f"━━━━━━━━━━━━━━━━━━"
+    )
+
+
+def process_wallet_deposit_binance(user_id, amount, binance_order_id=None):
+    if not binance_order_id:
+        return False, "Binance Order ID / transaction reference missing."
+
+    print(
+        f"[Binance Pay Wallet Deposit] Checking ref={binance_order_id}, "
+        f"user={user_id}, amount={amount} USDT"
+    )
+
+    success, msg = find_binance_payment_reference(
+        reference=binance_order_id,
+        expected_amount=amount,
+        minutes_order=10,
+        minutes_offchain=5,
+    )
+
+    if success:
+        database.update_user_wallet(user_id, float(amount))
+        database.add_transaction(user_id, "Binance Pay Deposit", float(amount))
+        return True, (
+            f"{tg(EMOJIS['confirm'], '✅')} <b>Deposit verified successfully.</b>\n\n"
+            f"Your wallet has been credited with <b>{safe(amount)} USDT</b>."
+        )
+
+    return False, (
+        f"{tg(EMOJIS['cancel'], '❌')} <b>Deposit not verified.</b>\n\n"
+        f"{safe(msg)}"
+    )
+
 def get_wallet_payment_summary(user_id, total_amount):
     user = database.get_user(user_id)
     if not user:
