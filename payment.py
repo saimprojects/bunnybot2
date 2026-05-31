@@ -286,11 +286,12 @@ def get_binance_payment_details(total_amount):
     binance_id = get_binance_pay_id()
 
     return (
-        f"{tg(EMOJIS['binance'], '💳')} <b>Binance Payment</b>\n\n"
+        f"{tg(EMOJIS['binance'], '💳')} <b>Binance Pay ID Payment</b>\n\n"
         f"Binance ID (tap to copy):\n"
         f"<code>{safe(binance_id)}</code>\n\n"
         f"Amount to transfer: <b>${safe(total_amount)}</b>\n\n"
-        f"Please send the order ID or off-chain transaction reference after payment for verification.\n\n"
+        f"After payment, click <b>I have sent payment</b>.\n"
+        f"Then send your <b>Binance Order ID</b> or <b>off-chain transaction reference</b> for auto verification.\n\n"
         f"━━━━━━━━━━━━━━━━━━"
     )
 

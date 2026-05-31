@@ -158,21 +158,35 @@ def quantity_selection_keyboard():
 
 
 def payment_method_keyboard():
-    buttons = [
-        btn("💳 Pay with Binance", callback_data='pay_binance', style="primary"),
-        btn("Pay with Wallet", callback_data='pay_wallet', style="success", emoji_id=EMOJIS["wallet"]),
-        back_btn("Back to Quantity", callback_data='back_to_quantity', style="danger"),
-    ]
-    return build_menu(buttons, n_cols=1)
-
+    return build_menu([
+        btn(
+            "Pay with Binance Pay ID",
+            callback_data="pay_binance",
+            style="success",
+            emoji_id=EMOJIS.get("wallet")
+        ),
+        back_btn(
+            "Back to Quantity",
+            callback_data="back_to_quantity",
+            style="danger"
+        ),
+    ], n_cols=1)
 
 def binance_payment_keyboard():
-    buttons = [
-        btn("I have sent the payment", callback_data='check_binance_payment', style="success", emoji_id=EMOJIS["confirm"]),
-        btn("Cancel Order", callback_data='cancel_order', style="danger", emoji_id=EMOJIS["cancel"]),
-    ]
-    return build_menu(buttons, n_cols=1)
-
+    return build_menu([
+        btn(
+            "I have sent payment",
+            callback_data="check_binance_payment",
+            style="success",
+            emoji_id=EMOJIS["confirm"]
+        ),
+        btn(
+            "Cancel Order",
+            callback_data="cancel_order",
+            style="danger",
+            emoji_id=EMOJIS["cancel"]
+        ),
+    ], n_cols=1)
 
 def wallet_payment_keyboard():
     buttons = [
