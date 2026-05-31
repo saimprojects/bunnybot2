@@ -199,7 +199,6 @@ def order_confirmed_keyboard():
 def wallet_options_keyboard():
     buttons = [
         btn("Deposit", callback_data='deposit_wallet', style="success", emoji_id=EMOJIS["deposit"]),
-        btn("Withdraw", callback_data='withdraw_wallet', style="danger", emoji_id=EMOJIS["withdraw"]),
     ]
     return build_menu(buttons, n_cols=2, footer_buttons=[back_btn("Back", callback_data='main_menu')])
 
