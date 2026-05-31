@@ -1,6 +1,7 @@
 import logging
 import datetime
 import json
+from html import escape as html_escape
 from telegram import Update, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
@@ -24,9 +25,48 @@ logger = logging.getLogger(__name__)
 
 
 
-def ce(name, fallback=""):
-    """Return a readable fallback emoji. Button custom emoji IDs are applied in utils.py."""
-    return fallback
+def tg(emoji_id: str, fallback: str) -> str:
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+CUSTOM_EMOJIS = {
+    # start
+    "welcome_star": ("5325547803936572038", "✨"),
+    "choose_option": ("5406745015365943482", "👇"),
+
+    # profile
+    "profile": ("5461117441612462242", "👤"),
+    "id": ("5427168083074628963", "🆔"),
+    "username": ("5260293700088511294", "📛"),
+    "date": ("5413879192267805083", "📅"),
+    "wallet": ("5409048419211682843", "💰"),
+    "box": ("5231012545799666522", "📦"),
+    "gift": ("5217822164362739968", "🎁"),
+    "link": ("5305265301917549162", "🔗"),
+
+    # purchase history
+    "no_orders": ("5406683434124859552", "📭"),
+    "arrow": ("5416117059207572332", "👉"),
+
+    # wallet
+    "diamond": ("5427168083074628963", "💎"),
+    "stats": ("5231200819986047254", "📊"),
+
+    # order details
+    "order_details": ("5231012545799666522", "🔎"),
+
+    # support
+    "support_center": ("5395695537687123235", "🆘"),
+    "faq": ("5282843764451195532", "📖"),
+    "contact": ("5443038326535759644", "💬"),
+    "announcement": ("5424818078833715060", "🔔"),
+}
+
+
+def ce(name: str) -> str:
+    emoji_id, fallback = CUSTOM_EMOJIS[name]
+    return tg(emoji_id, fallback)
+
 
 
 async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text: str, parse_mode: str = "Markdown"):
@@ -105,22 +145,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 pass
 
     welcome_text = (
-        f"{ce('welcome_star', '✨')} *Bunny Tools* {ce('welcome_star', '✨')}\n\n"
-        f"Welcome! Choose an option below {ce('choose_option', '👇')}"
+        f"{ce('welcome_star')} <b>Bunny Tools</b> {ce('welcome_star')}\n\n"
+        f"Welcome! Choose an option below {ce('choose_option')}"
     )
 
     if update.message:
         await update.message.reply_text(
             welcome_text,
             reply_markup=utils.main_menu_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
 
     elif update.callback_query:
         await update.callback_query.edit_message_text(
             welcome_text,
             reply_markup=utils.main_menu_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
 
 
@@ -136,30 +176,33 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=
         text = "Profile not found."
     else:
         bot_username = (await context.bot.get_me()).username
+        username = html_escape(user[1] if user[1] else "Unknown")
+        joined = html_escape(str(user[2]))
+
         text = (
-            f"{ce('profile_text', '👤')} *My Profile*\n\n"
-            f"{ce('id', '🆔')} ID: `{user[0]}`\n"
-            f"{ce('username', '📛')} Username: @{user[1] if user[1] else 'Unknown'}\n"
-            f"{ce('date', '📅')} Joined: {user[2]}\n\n"
+            f"{ce('profile')} <b>My Profile</b>\n\n"
+            f"{ce('id')} ID: <code>{user[0]}</code>\n"
+            f"{ce('username')} Username: @{username}\n"
+            f"{ce('date')} Joined: {joined}\n\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"{ce('wallet', '💰')} Wallet Balance: {user[3]} USDT\n"
-            f"{ce('view_products', '📦')} Total Orders: {user[4]}\n"
+            f"{ce('wallet')} Wallet Balance: {user[3]} USDT\n"
+            f"{ce('box')} Total Orders: {user[4]}\n"
             f"👥 Referrals: {user[5]}\n"
-            f"{ce('gift', '🎁')} Referral Earnings: {user[6]} USDT\n"
+            f"{ce('gift')} Referral Earnings: {user[6]} USDT\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"{ce('link', '🔗')} *Your Referral Link:*\n"
-            f"`t.me/{bot_username}?start=ref_{user[0]}`\n\n"
-            f"👥 *Refer & Earn:* 10% commission"
+            f"{ce('link')} <b>Your Referral Link:</b>\n"
+            f"<code>t.me/{html_escape(bot_username)}?start=ref_{user[0]}</code>\n\n"
+            f"👥 <b>Refer & Earn:</b> 10% commission"
         )
 
     if edit and update.callback_query:
         await update.callback_query.edit_message_text(
             text,
             reply_markup=utils.main_menu_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
     else:
-        await update.message.reply_text(text, parse_mode='Markdown')
+        await update.message.reply_text(text, parse_mode='HTML')
 
 
 async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -168,22 +211,22 @@ async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TY
 
     if not orders:
         text = (
-            "📭 *No Orders Yet*\n\n"
+            f"{ce('no_orders')} <b>No Orders Yet</b>\n\n"
             "You haven't made any purchases yet.\n\n"
-            f"{ce('back', '👉')} Go to *Products* to buy something."
+            f"{ce('arrow')} Go to <b>Products</b> to buy something."
         )
     else:
-        text = "📜 *Purchase History*\n\n"
+        text = f"{ce('order_details')} <b>Purchase History</b>\n\n"
 
         for order in orders:
             product = database.get_product(order[2])
-            product_name = product[1] if product else "Unknown"
+            product_name = html_escape(product[1] if product else "Unknown")
 
             text += (
                 f"━━━━━━━━━━━━━━━━━━\n"
-                f"*Order #{order[0]}*\n"
+                f"<b>Order #{html_escape(str(order[0]))}</b>\n"
                 f"{product_name}\n"
-                f"Qty: {order[3]} | {order[4]} USDT | ✅ {order[6]}\n"
+                f"Qty: {order[3]} | {order[4]} USDT | {html_escape(str(order[6]))}\n"
             )
 
         text += "━━━━━━━━━━━━━━━━━━"
@@ -192,10 +235,30 @@ async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TY
         await update.callback_query.edit_message_text(
             text,
             reply_markup=utils.main_menu_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
     else:
-        await update.message.reply_text(text, parse_mode='Markdown')
+        await update.message.reply_text(text, parse_mode='HTML')
+
+
+def build_wallet_message(user, transactions):
+    msg = (
+        f"{ce('wallet')} <b>My Wallet</b>\n\n"
+        f"{ce('diamond')} Balance: <b>{user[3]} USDT</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"{ce('stats')} <b>Recent Transactions:</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+    )
+
+    if transactions:
+        for tx in transactions[:5]:
+            sign = "+" if tx[3] > 0 else ""
+            msg += f"{sign}{tx[3]} USDT | {html_escape(str(tx[2]))} | {html_escape(str(tx[4]).split(' ')[0])}\n"
+    else:
+        msg += "No recent transactions.\n"
+
+    msg += f"━━━━━━━━━━━━━━━━━━\n\n{ce('choose_option')} <b>Options:</b>"
+    return msg
 
 
 # ══════════════════════════════════════════════════════════
@@ -230,8 +293,8 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif text == "🔎 Order Details":
         await update.message.reply_text(
-            f"{ce('view_products', '🔎')} *Order Details*\n\nPlease send your Order ID:",
-            parse_mode='Markdown'
+            f"{ce('order_details')} <b>Order Details</b>\n\nPlease send your Order ID:",
+            parse_mode='HTML'
         )
         context.user_data['waiting_for_order_details'] = True
 
@@ -239,44 +302,30 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
         user = database.get_user(user_id)
         transactions = database.get_user_transactions(user_id)
 
-        msg = (
-            f"{ce('wallet', '💰')} *My Wallet*\n\n"
-            f"{ce('id', '💎')} Balance: *{user[3]} USDT*\n\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"{ce('stats', '📊')} *Recent Transactions:*\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-        )
-
-        if transactions:
-            for tx in transactions[:5]:
-                sign = "+" if tx[3] > 0 else ""
-                msg += f"{sign}{tx[3]} USDT | {tx[2]} | {tx[4].split(' ')[0]}\n"
-        else:
-            msg += "No recent transactions.\n"
-
-        msg += f"━━━━━━━━━━━━━━━━━━\n\n{ce('choose_option', '👇')} *Options:*"
+        msg = build_wallet_message(user, transactions)
 
         await update.message.reply_text(
             msg,
             reply_markup=utils.wallet_options_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
 
     elif text == "🆘 Support":
         msg = (
-            f"{ce('announcement', '🆘')} *Support Center*\n\n"
-            f"{ce('faq', '📖')} *FAQ* — Common questions\n"
-            f"{ce('support', '💬')} *Contact Admin* — Message to owner\n"
-            f"{ce('broadcast', '🔔')} *Announcements* — Join our channel\n\n"
+            f"{ce('support_center')} <b>Support Center</b>\n\n"
+            f"{ce('faq')} <b>FAQ</b> — Common questions\n"
+            f"{ce('contact')} <b>Contact Admin</b> — Message to owner\n"
+            f"{ce('announcement')} <b>Announcements</b> — Join our channel\n\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"{ce('choose_option', '👇')} Choose option:"
+            f"{ce('choose_option')} Choose option:"
         )
 
         await update.message.reply_text(
             msg,
             reply_markup=utils.support_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
+
 
 
 # ══════════════════════════════════════════════════════════
@@ -321,9 +370,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif data == 'order_details':
         await query.edit_message_text(
-            f"{ce('view_products', '🔎')} *Order Details*\n\nPlease send your Order ID:",
+            f"{ce('order_details')} <b>Order Details</b>\n\nPlease send your Order ID:",
             reply_markup=utils.main_menu_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         return ORDER_DETAILS
 
@@ -518,27 +567,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user = database.get_user(user_id)
         transactions = database.get_user_transactions(user_id)
 
-        text = (
-            f"{ce('wallet', '💰')} *My Wallet*\n\n"
-            f"{ce('id', '💎')} Balance: *{user[3]} USDT*\n\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"{ce('stats', '📊')} *Recent Transactions:*\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-        )
-
-        if transactions:
-            for tx in transactions[:5]:
-                sign = "+" if tx[3] > 0 else ""
-                text += f"{sign}{tx[3]} USDT | {tx[2]} | {tx[4].split(' ')[0]}\n"
-        else:
-            text += "No recent transactions.\n"
-
-        text += f"━━━━━━━━━━━━━━━━━━\n\n{ce('choose_option', '👇')} *Options:*"
+        text = build_wallet_message(user, transactions)
 
         await query.edit_message_text(
             text,
             reply_markup=utils.wallet_options_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         return ConversationHandler.END
 
@@ -587,14 +621,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif data == 'support':
         await query.edit_message_text(
-            f"{ce('announcement', '🆘')} *Support Center*\n\n"
-            f"{ce('faq', '📖')} *FAQ* — Common questions\n"
-            f"{ce('support', '💬')} *Contact Admin* — Message to owner\n"
-            f"{ce('broadcast', '🔔')} *Announcements* — Join our channel\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            f"{ce('choose_option', '👇')} Choose option:",
+            (
+                f"{ce('support_center')} <b>Support Center</b>\n\n"
+                f"{ce('faq')} <b>FAQ</b> — Common questions\n"
+                f"{ce('contact')} <b>Contact Admin</b> — Message to owner\n"
+                f"{ce('announcement')} <b>Announcements</b> — Join our channel\n\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"{ce('choose_option')} Choose option:"
+            ),
             reply_markup=utils.support_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         return ConversationHandler.END
 
@@ -786,11 +822,11 @@ def build_order_details_message(order, is_admin=False):
     except Exception:
         delivery_details = []
 
-    text = "🔎 *Order Details*\n\n━━━━━━━━━━━━━━━━━━\n"
-    text += f"🧾 Order ID: `{order[0]}`\n"
+    text = f"{ce('order_details')} <b>Order Details</b>\n\n━━━━━━━━━━━━━━━━━━\n"
+    text += f"🧾 Order ID: <code>{html_escape(str(order[0]))}</code>\n"
 
     if is_admin:
-        text += f"👤 User ID: `{order[1]}`\n"
+        text += f"{ce('profile')} User ID: <code>{order[1]}</code>\n"
 
     text += (
         f"📅 Date: {order[7]}\n"
@@ -847,7 +883,7 @@ async def handle_order_details(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(
         build_order_details_message(order, is_admin=False),
         reply_markup=utils.main_menu_keyboard(),
-        parse_mode='Markdown'
+        parse_mode='HTML'
     )
     return ConversationHandler.END
 
@@ -869,7 +905,7 @@ async def handle_admin_order_details(update: Update, context: ContextTypes.DEFAU
     await update.message.reply_text(
         build_order_details_message(order, is_admin=True),
         reply_markup=utils.admin_main_keyboard(),
-        parse_mode='Markdown'
+        parse_mode='HTML'
     )
     return ConversationHandler.END
 
