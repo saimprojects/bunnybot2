@@ -216,7 +216,7 @@ def support_keyboard():
         btn("FAQ", callback_data='faq', style="primary", emoji_id=EMOJIS["faq"]),
         btn(
     "Contact Support",
-    url="https://t.me/@Bunnyhaccks",
+    url="https://t.me/Bunnyhaccks",
     style="success",
     emoji_id=EMOJIS["support"]
 ),
