@@ -24,6 +24,8 @@ EMOJIS = {
     "broadcast": "5424818078833715060",
     "stats": "5231200819986047254",
     "view_products": "5231012545799666522",
+    "binance_pay": "6222208096257712941",  # Binance icon custom emoji
+    "wallet_pay": "5409048419211682843",   # Wallet icon
 }
 
 def generate_order_id():
@@ -98,10 +100,10 @@ def quantity_selection_keyboard():
 
 
 def payment_method_keyboard():
-    """Two payment options: Binance Pay ID OR Wallet"""
+    """Two payment options: Binance Pay ID OR Wallet - with custom emojis"""
     return build_menu([
-        btn("💳 Pay with Binance Pay ID", callback_data="pay_binance", style="success", emoji_id=EMOJIS.get("wallet")),
-        btn("👛 Pay with Wallet", callback_data="pay_wallet", style="primary", emoji_id=EMOJIS.get("wallet")),
+        btn("Pay with Binance Pay ID", callback_data="pay_binance", style="success", emoji_id=EMOJIS["binance_pay"]),
+        btn("Pay with Wallet", callback_data="pay_wallet", style="primary", emoji_id=EMOJIS["wallet_pay"]),
         back_btn("Back to Quantity", callback_data="back_to_quantity", style="danger"),
     ], n_cols=1)
 
