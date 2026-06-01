@@ -53,6 +53,8 @@ CUSTOM_EMOJIS = {
     "confirm": ("5206607081334906820", "✅"),
     "cancel": ("5210952531676504517", "❌"),
     "order": ("5406683434124859552", "🛒"),
+    "lightning": ("5231200819986047254", "⚡"),
+    "lock": ("5231012545799666522", "🔒"),
 }
 
 
@@ -132,7 +134,7 @@ async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, 
 
 
 # ══════════════════════════════════════════════════════════
-#   START
+#   START - WELCOME MESSAGE
 # ══════════════════════════════════════════════════════════
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -153,18 +155,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 pass
 
     first_name = html_escape(user.first_name or "there")
+    
+    # PROFESSIONAL WELCOME MESSAGE WITH CUSTOM EMOJIS
     welcome_text = (
-        f"{ce('welcome_star')} <b>Welcome to Bunny Tools!</b> {ce('welcome_star')}\n\n"
-        f"Hey <b>{first_name}</b> 👋\n\n"
-        f"We offer premium digital products at the best prices with fast, secure, "
-        f"and fully automated delivery.\n\n"
-        f"<blockquote>"
-        f"{ce('products')} <b>Products</b> — Browse & buy products\n"
-        f"{ce('wallet')} <b>Wallet</b> — Deposit funds and pay faster\n"
-        f"{ce('profile')} <b>Profile</b> — Balance, orders and referrals\n"
-        f"{ce('support_center')} <b>Support</b> — Get help anytime"
-        f"</blockquote>\n\n"
-        f"{ce('choose_option')} Choose an option below:"
+        f"{ce('welcome_star')} <b>✨ Bunny Tools Premium ✨</b> {ce('welcome_star')}\n\n"
+        f"{ce('diamond')} <b>Premium Digital Products with Instant Delivery</b> {ce('diamond')}\n"
+        f"{ce('lightning')} <b>Fast • Secure • Automated</b> {ce('lock')}\n\n"
+        f"{ce('products')} <b>Products</b>\n"
+        f"{ce('wallet')} <b>Wallet</b>\n"
+        f"{ce('profile')} <b>Profile</b>\n"
+        f"{ce('support_center')} <b>Support</b>\n\n"
+        f"{ce('choose_option')} <b>Choose an option below</b>"
     )
 
     if update.message:
@@ -187,19 +188,20 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=
         username = html_escape(user[1] if user[1] else "Unknown")
         joined = html_escape(str(user[2]))
         text = (
-            f"{ce('profile')} <b>My Profile</b>\n\n"
-            f"{ce('id')} ID: <code>{user[0]}</code>\n"
-            f"{ce('username')} Username: @{username}\n"
-            f"{ce('date')} Joined: {joined}\n\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"{ce('wallet')} Wallet Balance: {user[3]} USDT\n"
-            f"{ce('box')} Total Orders: {user[4]}\n"
-            f"👥 Referrals: {user[5]}\n"
-            f"{ce('gift')} Referral Earnings: {user[6]} USDT\n"
-            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"{ce('profile')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('profile')}\n\n"
+            f"{ce('profile')} <b>👤 MY PROFILE</b> {ce('profile')}\n\n"
+            f"{ce('id')} <b>ID:</b> <code>{user[0]}</code>\n"
+            f"{ce('username')} <b>Username:</b> @{username}\n"
+            f"{ce('date')} <b>Joined:</b> {joined}\n\n"
+            f"{ce('diamond')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('diamond')}\n"
+            f"{ce('wallet')} <b>Wallet Balance:</b> {user[3]} USDT\n"
+            f"{ce('box')} <b>Total Orders:</b> {user[4]}\n"
+            f"{ce('gift')} <b>Referrals:</b> {user[5]}\n"
+            f"{ce('wallet')} <b>Referral Earnings:</b> {user[6]} USDT\n"
+            f"{ce('diamond')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('diamond')}\n\n"
             f"{ce('link')} <b>Your Referral Link:</b>\n"
             f"<code>t.me/{html_escape(bot_username)}?start=ref_{user[0]}</code>\n\n"
-            f"👥 <b>Refer & Earn:</b> 10% commission"
+            f"{ce('gift')} <b>Refer & Earn:</b> 10% commission"
         )
     if edit and update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
@@ -210,24 +212,43 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=
 async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
     user_id = update.effective_user.id
     orders = database.get_user_orders(user_id)
+    
     if not orders:
         text = (
-            f"{ce('no_orders')} <b>No Orders Yet</b>\n\n"
-            "You haven't made any purchases yet.\n\n"
-            f"{ce('arrow')} Go to <b>Products</b> to buy something."
+            f"{ce('no_orders')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('no_orders')}\n\n"
+            f"{ce('no_orders')} <b>📭 NO ORDERS YET</b> {ce('no_orders')}\n\n"
+            f"{ce('box')} You haven't made any purchases yet.\n\n"
+            f"{ce('arrow')} <b>Go to Products to buy something!</b>\n\n"
+            f"{ce('welcome_star')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('welcome_star')}"
         )
     else:
-        text = f"{ce('order_details')} <b>Purchase History</b>\n\n"
+        text = (
+            f"{ce('order_details')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('order_details')}\n"
+            f"{ce('order')} <b>📜 PURCHASE HISTORY</b> {ce('order')}\n"
+            f"{ce('order_details')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('order_details')}\n\n"
+        )
+        
         for order in orders:
             product = database.get_product(order[2])
             product_name = html_escape(product[1] if product else "Unknown")
+            product_emoji = product[9] if product and len(product) > 9 and product[9] else ce('box')
+            
+            status_emoji = ce('confirm') if order[6] == "Confirmed" else ce('cancel')
+            
             text += (
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"<b>Order #{html_escape(str(order[0]))}</b>\n"
-                f"{product_name}\n"
-                f"Qty: {order[3]} | {order[4]} USDT | {html_escape(str(order[6]))}\n"
+                f"┌─────────────────────────────────────────┐\n"
+                f"│ {product_emoji} <b>ORDER #{html_escape(str(order[0]))}</b>\n"
+                f"│\n"
+                f"│ {ce('box')} <b>Product:</b> {product_name}\n"
+                f"│ {ce('order')} <b>Quantity:</b> {order[3]}\n"
+                f"│ {ce('wallet')} <b>Amount:</b> {order[4]} USDT\n"
+                f"│ {status_emoji} <b>Status:</b> {html_escape(str(order[6]))}\n"
+                f"│ {ce('date')} <b>Date:</b> {html_escape(str(order[7]).split(' ')[0])}\n"
+                f"└─────────────────────────────────────────┘\n\n"
             )
-        text += "━━━━━━━━━━━━━━━━━━"
+        
+        text += f"{ce('confirm')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('confirm')}"
+    
     if edit and update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
     else:
@@ -236,19 +257,22 @@ async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TY
 
 def build_wallet_message(user, transactions):
     msg = (
-        f"{ce('wallet')} <b>My Wallet</b>\n\n"
-        f"{ce('diamond')} Balance: <b>{user[3]} USDT</b>\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"{ce('stats')} <b>Recent Transactions:</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
+        f"{ce('wallet')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('wallet')}\n"
+        f"{ce('wallet')} <b>💰 MY WALLET</b> {ce('wallet')}\n"
+        f"{ce('wallet')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('wallet')}\n\n"
+        f"{ce('diamond')} <b>Balance:</b> <code>{user[3]} USDT</code>\n\n"
+        f"{ce('stats')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('stats')}\n"
+        f"{ce('stats')} <b>📊 Recent Transactions:</b>\n"
+        f"{ce('stats')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('stats')}\n"
     )
     if transactions:
         for tx in transactions[:5]:
             sign = "+" if tx[3] > 0 else ""
-            msg += f"{sign}{tx[3]} USDT | {html_escape(str(tx[2]))} | {html_escape(str(tx[4]).split(' ')[0])}\n"
+            emoji = ce('confirm') if tx[3] > 0 else ce('cancel')
+            msg += f"{emoji} {sign}{tx[3]} USDT | {html_escape(str(tx[2]))} | {html_escape(str(tx[4]).split(' ')[0])}\n"
     else:
-        msg += "No recent transactions.\n"
-    msg += f"━━━━━━━━━━━━━━━━━━\n\n{ce('choose_option')} <b>Options:</b>"
+        msg += f"{ce('no_orders')} No recent transactions.\n"
+    msg += f"\n{ce('choose_option')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b>\n{ce('choose_option')} <b>Options:</b>"
     return msg
 
 
@@ -285,11 +309,13 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif text == "🆘 Support":
         msg = (
-            f"{ce('support_center')} <b>Support Center</b>\n\n"
+            f"{ce('support_center')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('support_center')}\n"
+            f"{ce('support_center')} <b>🆘 SUPPORT CENTER</b> {ce('support_center')}\n"
+            f"{ce('support_center')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('support_center')}\n\n"
             f"{ce('faq')} <b>FAQ</b> — Common questions\n"
             f"{ce('contact')} <b>Contact Admin</b> — Message to owner\n"
             f"{ce('announcement')} <b>Announcements</b> — Join our channel\n\n"
-            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"{ce('choose_option')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b>\n"
             f"{ce('choose_option')} Choose option:"
         )
         await update.message.reply_text(msg, reply_markup=utils.support_keyboard(), parse_mode='HTML')
@@ -399,7 +425,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         current_balance = user[3] if user else 0
         
         if current_balance >= total_amount:
-            # Sufficient balance, show confirmation
             await query.edit_message_text(
                 payment.get_wallet_payment_summary(user_id, total_amount),
                 reply_markup=utils.wallet_payment_keyboard(),
@@ -407,7 +432,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return ConversationHandler.END
         else:
-            # Insufficient balance
             required = round(total_amount - current_balance, 4)
             await query.edit_message_text(
                 f"{ce('cancel')} <b>Insufficient Balance</b>\n\n"
@@ -524,11 +548,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif data == 'support':
         await query.edit_message_text(
             (
-                f"{ce('support_center')} <b>Support Center</b>\n\n"
+                f"{ce('support_center')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('support_center')}\n"
+                f"{ce('support_center')} <b>🆘 SUPPORT CENTER</b> {ce('support_center')}\n"
+                f"{ce('support_center')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('support_center')}\n\n"
                 f"{ce('faq')} <b>FAQ</b> — Common questions\n"
                 f"{ce('contact')} <b>Contact Admin</b> — Message to owner\n"
                 f"{ce('announcement')} <b>Announcements</b> — Join our channel\n\n"
-                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"{ce('choose_option')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b>\n"
                 f"{ce('choose_option')} Choose option:"
             ),
             reply_markup=utils.support_keyboard(),
@@ -538,15 +564,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif data == 'faq':
         await query.edit_message_text(
-            "❓ *FAQ*\n\n"
-            "*Q: How long does delivery take?*\n"
-            "A: Delivery is instant after payment confirmation.\n\n"
-            "*Q: What if my account stops working?*\n"
-            "A: Contact admin with your Order ID for replacement within warranty.\n\n"
-            "*Q: Can I share the account?*\n"
-            "A: No, sharing violates our policy.",
+            f"{ce('faq')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('faq')}\n"
+            f"{ce('faq')} <b>❓ FREQUENTLY ASKED QUESTIONS</b> {ce('faq')}\n"
+            f"{ce('faq')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('faq')}\n\n"
+            f"<b>Q:</b> How long does delivery take?\n"
+            f"<b>A:</b> Delivery is instant after payment confirmation.\n\n"
+            f"<b>Q:</b> What if my account stops working?\n"
+            f"<b>A:</b> Contact admin with your Order ID for replacement within warranty.\n\n"
+            f"<b>Q:</b> Can I share the account?\n"
+            f"<b>A:</b> No, sharing violates our policy.\n\n"
+            f"{ce('confirm')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('confirm')}",
             reply_markup=utils.support_keyboard(),
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         return ConversationHandler.END
 
@@ -761,22 +790,24 @@ def build_order_details_message(order, is_admin=False):
     except Exception:
         delivery_details = []
 
-    text = f"{ce('order_details')} <b>Order Details</b>\n\n━━━━━━━━━━━━━━━━━━\n"
-    text += f"🧾 Order ID: <code>{html_escape(str(order[0]))}</code>\n"
+    text = f"{ce('order_details')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('order_details')}\n"
+    text += f"{ce('order')} <b>🔎 ORDER DETAILS</b> {ce('order')}\n"
+    text += f"{ce('order_details')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('order_details')}\n\n"
+    text += f"🧾 <b>Order ID:</b> <code>{html_escape(str(order[0]))}</code>\n"
 
     if is_admin:
-        text += f"{ce('profile')} User ID: <code>{order[1]}</code>\n"
+        text += f"{ce('profile')} <b>User ID:</b> <code>{order[1]}</code>\n"
 
     text += (
-        f"📅 Date: {order[7]}\n"
-        f"📦 Product: {product_name}\n"
-        f"🔢 Quantity: {order[3]}\n"
-        f"💰 Paid: {order[4]} USDT\n"
-        f"💳 Method: {order[5]}\n"
-        f"✅ Status: {order[6]}\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"🔑 *Credentials:*\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"{ce('date')} <b>Date:</b> {order[7]}\n"
+        f"{ce('box')} <b>Product:</b> {product_name}\n"
+        f"{ce('order')} <b>Quantity:</b> {order[3]}\n"
+        f"{ce('wallet')} <b>Paid:</b> {order[4]} USDT\n"
+        f"{ce('wallet')} <b>Method:</b> {order[5]}\n"
+        f"{ce('confirm')} <b>Status:</b> {order[6]}\n\n"
+        f"{ce('diamond')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('diamond')}\n"
+        f"{ce('box')} <b>🔑 CREDENTIALS:</b>\n"
+        f"{ce('diamond')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('diamond')}\n\n"
     )
 
     if not delivery_details:
@@ -788,13 +819,13 @@ def build_order_details_message(order, is_admin=False):
 
     for i, item_data in enumerate(delivery_details, start=1):
         if len(delivery_details) > 1:
-            text += f"*Item {i}/{len(delivery_details)}*\n"
+            text += f"<b>Item {i}/{len(delivery_details)}</b>\n"
         if isinstance(item_data, dict):
             text += format_item_data_for_delivery(item_data) + "\n\n"
         else:
             text += f"`{item_data}`\n\n"
 
-    text += "━━━━━━━━━━━━━━━━━━"
+    text += f"{ce('confirm')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('confirm')}"
     return text
 
 
@@ -871,39 +902,44 @@ async def deliver_product(update: Update, context: ContextTypes.DEFAULT_TYPE, pa
     database.create_order(order_id, user_id, product_id, quantity, total_amount, payment_method, "Confirmed", delivery_details)
 
     date_str = datetime.datetime.now().strftime('%d %b %Y')
+    
+    product_emoji = product[9] if len(product) > 9 and product[9] else ce('box')
+    
     text = (
-        f"✅ *ORDER CONFIRMED!*\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🧾 Order ID: `{order_id}`\n"
-        f"📅 Date: {date_str}\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📦 Product: {product[1]}\n"
-        f"🔢 Quantity: {quantity}\n"
-        f"💰 Paid: {total_amount} USDT via {payment_method}\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🔑 *Login Details:*\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"{ce('confirm')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('confirm')}\n"
+        f"{ce('confirm')} <b>✅ ORDER CONFIRMED!</b> {ce('confirm')}\n"
+        f"{ce('confirm')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('confirm')}\n\n"
+        f"{ce('order')} <b>Order ID:</b> <code>{order_id}</code>\n"
+        f"{ce('date')} <b>Date:</b> {date_str}\n\n"
+        f"{ce('box')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('box')}\n"
+        f"{product_emoji} <b>Product:</b> {product[1]}\n"
+        f"{ce('order')} <b>Quantity:</b> {quantity}\n"
+        f"{ce('wallet')} <b>Paid:</b> {total_amount} USDT via {payment_method}\n"
+        f"{ce('box')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('box')}\n\n"
+        f"{ce('diamond')} <b>🔑 LOGIN DETAILS:</b> {ce('diamond')}\n"
+        f"{ce('diamond')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('diamond')}\n\n"
     )
 
     if quantity == 1:
         text += format_item_data_for_delivery(delivery_details[0]) + "\n\n"
     else:
         for i, item_data in enumerate(delivery_details):
-            text += f"*Item {i + 1}/{quantity}*\n"
+            text += f"<b>Item {i + 1}/{quantity}</b>\n"
             text += format_item_data_for_delivery(item_data) + "\n\n"
 
     text += (
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        "⚠️ *Important:*\n"
-        "• Do not change the password\n"
-        "• Do not share with others\n"
-        "• Use on 1 device only"
+        f"{ce('warning')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('warning')}\n"
+        f"{ce('warning')} <b>⚠️ IMPORTANT:</b>\n"
+        f"• Do not change the password\n"
+        f"• Do not share with others\n"
+        f"• Use on 1 device only\n"
+        f"{ce('warning')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('warning')}"
     )
 
     if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=utils.order_confirmed_keyboard(), parse_mode='Markdown')
+        await update.callback_query.edit_message_text(text, reply_markup=utils.order_confirmed_keyboard(), parse_mode='HTML')
     else:
-        await update.message.reply_text(text, reply_markup=utils.order_confirmed_keyboard(), parse_mode='Markdown')
+        await update.message.reply_text(text, reply_markup=utils.order_confirmed_keyboard(), parse_mode='HTML')
 
 
 # ══════════════════════════════════════════════════════════

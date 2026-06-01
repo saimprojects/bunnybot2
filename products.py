@@ -11,10 +11,14 @@ EMOJIS = {
     "product": "5231012545799666522",      # 📦
     "wallet": "5409048419211682843",       # 💰
     "date": "5413879192267805083",         # 📅
-    "sticker": "5406745015365943482",      # 🧩
+    "sticker": "5406745015365943482",      # 👇
     "confirm": "5206607081334906820",      # ✅
-    "warning": "5210952531676504517",      # ⚠️ / ❌ style
+    "warning": "5210952531676504517",      # ❌
     "description": "5282843764451195532",  # 📖
+    "info": "5427168083074628963",         # ℹ️ / 💎
+    "box": "5231012545799666522",          # 📦
+    "diamond": "5427168083074628963",      # 💎
+    "stats": "5231200819986047254",        # 📊
 }
 
 
@@ -29,7 +33,6 @@ def get_product_icon(emoji_id):
     """
     if emoji_id and str(emoji_id).strip() and str(emoji_id).strip().lower() != "none":
         return tg(str(emoji_id).strip(), "📦")
-
     return tg(EMOJIS["product"], "📦")
 
 
@@ -37,13 +40,11 @@ def get_product_details_message(product_id):
     product = database.get_product(product_id)
 
     if not product:
-        return "Product not found."
+        return f"{tg(EMOJIS['warning'], '❌')} <b>Product not found.</b>"
 
-    # Current database product tuple:
+    # Database product tuple:
     # 0 id, 1 name, 2 duration, 3 price, 4 stock,
     # 5 rating, 6 description, 7 features_json, 8 note, 9 emoji_id
-    #
-    # Rating aur Features ab display/use nahi honge.
     if len(product) > 9:
         pid = product[0]
         name = product[1]
@@ -54,29 +55,30 @@ def get_product_details_message(product_id):
         note = product[8]
         emoji_id = product[9]
     else:
-        # Fallback support agar future mein database compact format ho:
-        # id, name, duration, price, stock, description, note, emoji_id
         pid, name, duration, price, stock, description, note, emoji_id = (
             product if len(product) >= 8 else (*product, "", "", "")
         )
 
     product_icon = get_product_icon(emoji_id)
 
+    # Professional product details with custom emojis
     message = (
-        f"{product_icon} <b>Product Details</b>\n\n"
-
-        f"{product_icon} <b>Name:</b> {safe(name)}\n"
-        f"{tg(EMOJIS['date'], '📅')} <b>Duration:</b> {safe(duration)}\n"
-        f"{tg(EMOJIS['wallet'], '💰')} <b>Price:</b> {safe(price)} USDT\n"
-        f"{tg(EMOJIS['product'], '📦')} <b>Stock Available:</b> {safe(stock)}\n\n"
-
-        f"{tg(EMOJIS['description'], '📖')} <b>Description:</b>\n"
-        f"{safe(description)}\n\n"
-
-        f"⚠️ <b>Note:</b>\n"
-        f"{safe(note)}\n\n"
-
-        f"━━━━━━━━━━━━━━━━━━"
+        f"{product_icon} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {product_icon}\n\n"
+        f"{product_icon} <b>✨ PRODUCT DETAILS</b> {product_icon}\n\n"
+        f"{product_icon} <b>┌── Name:</b> <code>{safe(name)}</code>\n"
+        f"{tg(EMOJIS['date'], '📅')} <b>├── Duration:</b> <code>{safe(duration)}</code>\n"
+        f"{tg(EMOJIS['wallet'], '💰')} <b>├── Price:</b> <code>{safe(price)} USDT</code>\n"
+        f"{tg(EMOJIS['box'], '📦')} <b>└── Stock:</b> <code>{safe(stock)} left</code>\n\n"
+        f"{tg(EMOJIS['description'], '📖')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {tg(EMOJIS['description'], '📖')}\n"
+        f"{tg(EMOJIS['description'], '📖')} <b>📝 Description</b>\n"
+        f"{tg(EMOJIS['description'], '📖')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b>\n"
+        f"<i>{safe(description)}</i>\n\n"
+        f"{tg(EMOJIS['warning'], '⚠️')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {tg(EMOJIS['warning'], '⚠️')}\n"
+        f"{tg(EMOJIS['warning'], '⚠️')} <b>❗ Important Note</b>\n"
+        f"{tg(EMOJIS['warning'], '⚠️')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b>\n"
+        f"<i>{safe(note)}</i>\n\n"
+        f"{tg(EMOJIS['confirm'], '✅')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {tg(EMOJIS['confirm'], '✅')}\n"
+        f"{tg(EMOJIS['sticker'], '👇')} <b>Click 'Order Now' to purchase this product</b>"
     )
 
     return message
