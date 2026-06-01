@@ -32,44 +32,23 @@ def generate_order_id():
 
 def btn(text, callback_data=None, url=None, style="default", emoji_id=None):
     api_kwargs = {}
-
     if emoji_id:
         api_kwargs["icon_custom_emoji_id"] = str(emoji_id)
-
     if url:
-        return InlineKeyboardButton(
-            text=text,
-            url=url,
-            style=style,
-            api_kwargs=api_kwargs
-        )
-
-    return InlineKeyboardButton(
-        text=text,
-        callback_data=callback_data,
-        style=style,
-        api_kwargs=api_kwargs
-    )
+        return InlineKeyboardButton(text=text, url=url, style=style, api_kwargs=api_kwargs)
+    return InlineKeyboardButton(text=text, callback_data=callback_data, style=style, api_kwargs=api_kwargs)
 
 
 def back_btn(text="Back", callback_data="main_menu", style="primary"):
-    return btn(
-        text,
-        callback_data=callback_data,
-        style=style,
-        emoji_id=EMOJIS["back"]
-    )
+    return btn(text, callback_data=callback_data, style=style, emoji_id=EMOJIS["back"])
 
 
 def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
     menu = [buttons[i:i + n_cols] for i in range(0, len(buttons), n_cols)]
-
     if header_buttons:
         menu.insert(0, header_buttons)
-
     if footer_buttons:
         menu.append(footer_buttons)
-
     return InlineKeyboardMarkup(menu)
 
 
@@ -77,69 +56,30 @@ def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
 
 def main_menu_keyboard():
     keyboard = [
+        [btn("Products", callback_data='products', style="success", emoji_id=EMOJIS["products"])],
         [
-            btn(
-                "Products",
-                callback_data='products',
-                style="success",
-                emoji_id=EMOJIS["products"]
-            )
+            btn("Profile", callback_data='profile', style="primary", emoji_id=EMOJIS["profile"]),
+            btn("Purchase History", callback_data='purchase_history', style="danger", emoji_id=EMOJIS["purchase_history"]),
         ],
         [
-            btn(
-                "Profile",
-                callback_data='profile',
-                style="primary",
-                emoji_id=EMOJIS["profile"]
-            ),
-            btn(
-                "Purchase History",
-                callback_data='purchase_history',
-                style="danger",
-                emoji_id=EMOJIS["purchase_history"]
-            ),
-        ],
-        [
-            btn(
-                "Wallet",
-                callback_data='wallet',
-                style="success",
-                emoji_id=EMOJIS["wallet"]
-            ),
-            btn(
-                "Support",
-                callback_data='support',
-                style="danger",
-                emoji_id=EMOJIS["support"]
-            ),
+            btn("Wallet", callback_data='wallet', style="success", emoji_id=EMOJIS["wallet"]),
+            btn("Support", callback_data='support', style="danger", emoji_id=EMOJIS["support"]),
         ],
     ]
-
     return InlineKeyboardMarkup(keyboard)
 
 
 def products_list_keyboard(products):
     buttons = []
-
     for p in products:
         product_id = p[0]
         product_name = p[1]
         price = p[3]
         stock = p[4]
         product_emoji_id = p[9] if len(p) > 9 and p[9] else None
-
         text = f"{product_name}  {price}$  ({stock})"
         style = "success" if stock and stock > 0 else "danger"
-
-        buttons.append(
-            btn(
-                text,
-                callback_data=f'product_{product_id}',
-                style=style,
-                emoji_id=product_emoji_id or EMOJIS["products"]
-            )
-        )
-
+        buttons.append(btn(text, callback_data=f'product_{product_id}', style=style, emoji_id=product_emoji_id or EMOJIS["products"]))
     buttons.append(back_btn("Back to Main Menu", callback_data='main_menu'))
     return build_menu(buttons, n_cols=1)
 
@@ -159,67 +99,60 @@ def quantity_selection_keyboard():
 
 def payment_method_keyboard():
     return build_menu([
-        btn(
-            "Pay with Binance Pay ID",
-            callback_data="pay_binance",
-            style="success",
-            emoji_id=EMOJIS.get("wallet")
-        ),
-        back_btn(
-            "Back to Quantity",
-            callback_data="back_to_quantity",
-            style="danger"
-        ),
+        btn("Pay with Binance Pay ID", callback_data="pay_binance", style="success", emoji_id=EMOJIS.get("wallet")),
+        back_btn("Back to Quantity", callback_data="back_to_quantity", style="danger"),
     ], n_cols=1)
 
 
 def binance_payment_keyboard():
     """
-    Payment details message par show hota hai.
-    Sirf 2 buttons: I have sent payment + Cancel Order.
+    Purchase: Payment details message par.
+    Buttons: I have sent payment + Cancel Order.
     """
     return build_menu([
-        btn(
-            "I have sent payment",
-            callback_data="check_binance_payment",
-            style="success",
-            emoji_id=EMOJIS["confirm"]
-        ),
-        btn(
-            "Cancel Order",
-            callback_data="cancel_order",
-            style="danger",
-            emoji_id=EMOJIS["cancel"]
-        ),
+        btn("I have sent payment", callback_data="check_binance_payment", style="success", emoji_id=EMOJIS["confirm"]),
+        btn("Cancel Order", callback_data="cancel_order", style="danger", emoji_id=EMOJIS["cancel"]),
     ], n_cols=1)
 
 
 def ask_order_id_keyboard():
     """
-    Jab bot Order ID maange tab show hota hai.
-    Sirf Cancel button — user ko type karna hai, koi action button nahi.
+    Purchase: Jab bot Order ID maange.
+    Sirf Cancel — user ko type karna hai.
     """
     return build_menu([
-        btn(
-            "Cancel Order",
-            callback_data="cancel_order",
-            style="danger",
-            emoji_id=EMOJIS["cancel"]
-        ),
+        btn("Cancel Order", callback_data="cancel_order", style="danger", emoji_id=EMOJIS["cancel"]),
+    ], n_cols=1)
+
+
+def deposit_enter_amount_keyboard():
+    """
+    Deposit Step 1: Amount maangne wala step.
+    Sirf Back — koi 'I have sent payment' button nahi.
+    """
+    return build_menu([
+        back_btn("Back", callback_data="wallet", style="danger"),
+    ], n_cols=1)
+
+
+def deposit_wallet_keyboard():
+    """
+    Deposit Step 2: Binance ID + amount show karne wala step.
+    Buttons: I have sent payment + Back.
+    """
+    return build_menu([
+        btn("I have sent payment", callback_data="check_deposit_payment", style="success", emoji_id=EMOJIS["confirm"]),
+        back_btn("Back", callback_data="wallet", style="danger"),
     ], n_cols=1)
 
 
 def ask_deposit_ref_keyboard():
     """
-    Jab bot wallet deposit ke liye Order ID/ref maange tab show hota hai.
-    Sirf Cancel button — user ko type karna hai.
+    Deposit Step 3: Jab bot Order ID/ref maange.
+    Sirf Cancel — user ko type karna hai.
     """
     return build_menu([
-        back_btn(
-            "Cancel",
-            callback_data="wallet",
-            style="danger"
-        ),
+        back_btn("Cancel", callback_data="wallet", style="danger"),
     ], n_cols=1)
 
 
@@ -246,46 +179,16 @@ def order_confirmed_keyboard():
 
 def wallet_options_keyboard():
     return build_menu([
-        btn(
-            "Deposit with Binance Pay ID",
-            callback_data="deposit_wallet",
-            style="success",
-            emoji_id=EMOJIS["deposit"]
-        ),
+        btn("Deposit with Binance Pay ID", callback_data="deposit_wallet", style="success", emoji_id=EMOJIS["deposit"]),
     ], n_cols=1, footer_buttons=[
         back_btn("Back", callback_data="main_menu")
     ])
 
 
-def deposit_wallet_keyboard():
-    """
-    Deposit payment details message par show hota hai.
-    Sirf 2 buttons: I have sent payment + Back.
-    """
-    return build_menu([
-        btn(
-            "I have sent payment",
-            callback_data="check_deposit_payment",
-            style="success",
-            emoji_id=EMOJIS["confirm"]
-        ),
-        back_btn(
-            "Back",
-            callback_data="wallet",
-            style="danger"
-        ),
-    ], n_cols=1)
-
-
 def support_keyboard():
     buttons = [
         btn("FAQ", callback_data='faq', style="primary", emoji_id=EMOJIS["faq"]),
-        btn(
-            "Contact Support",
-            url="https://t.me/Bunnyhaccks",
-            style="success",
-            emoji_id=EMOJIS["support"]
-        ),
+        btn("Contact Support", url="https://t.me/Bunnyhaccks", style="success", emoji_id=EMOJIS["support"]),
         btn("Announcements", url='https://t.me/bunnyhackss', style="primary", emoji_id=EMOJIS["announcement"]),
         back_btn("Back", callback_data='main_menu', style="danger"),
     ]
@@ -293,27 +196,14 @@ def support_keyboard():
 
 
 def product_update_purchase_keyboard(product, style="success"):
-    """
-    Auto announcement/update message ke liye sirf specific product ka single colored button.
-    """
     if not product:
         return None
-
     product_id = product[0]
     product_name = product[1]
     product_emoji_id = product[9] if len(product) > 9 and product[9] else None
-
-    keyboard = [
-        [
-            btn(
-                f"Buy {product_name}",
-                callback_data=f"product_{product_id}",
-                style=style,
-                emoji_id=product_emoji_id or EMOJIS["products"]
-            )
-        ]
-    ]
-
+    keyboard = [[
+        btn(f"Buy {product_name}", callback_data=f"product_{product_id}", style=style, emoji_id=product_emoji_id or EMOJIS["products"])
+    ]]
     return InlineKeyboardMarkup(keyboard)
 
 
