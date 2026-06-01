@@ -152,34 +152,52 @@ def add_stock_bulk_admin(stock_sections):
                 continue
 
             added_count = 0
+            valid_items = []
 
             for item in items_data:
                 if item:
+                    # Check if item already exists? No, just add
                     database.add_unsold_item(product_id, item)
                     added_count += 1
+                    valid_items.append(item)
 
             if added_count > 0:
-                database.update_product_stock(product_id, added_count)
+                # Update stock in products table
+                current_stock = product[4]
+                new_total_stock = current_stock + added_count
+                database.set_product_stock(product_id, new_total_stock)
+                
+                # Get fresh product data for broadcast
                 updated_product = database.get_product(product_id)
-                new_stock = updated_product[4] if updated_product else 0
-                emoji_id = updated_product[9] if updated_product and len(updated_product) > 9 else ""
-                products_to_broadcast.append((product_id, added_count, product[1], emoji_id, new_stock))
-
-            total_added += added_count
-            report += f"✅ Product ID `{product_id}`: Added `{added_count}` items.\n"
+                new_stock = updated_product[4] if updated_product else new_total_stock
+                emoji_id = updated_product[9] if updated_product and len(updated_product) > 9 and updated_product[9] else ""
+                
+                # Add to broadcast list
+                products_to_broadcast.append({
+                    'product_id': product_id,
+                    'added_count': added_count,
+                    'product_name': product[1],
+                    'emoji_id': emoji_id,
+                    'new_stock': new_stock
+                })
+                
+                report += f"✅ Product '{product[1]}' (ID: {product_id}): Added `{added_count}` items. New stock: {new_stock}\n"
+                total_added += added_count
+            else:
+                report += f"⚠️ Product ID `{product_id}`: No valid items to add.\n"
 
         report += f"\n━━━━━━━━━━━━━━━━━━\nTotal Added: *{total_added}*"
         
         # Debug print
-        print(f"[DEBUG] Products to broadcast: {len(products_to_broadcast)}")
+        print(f"[DEBUG] add_stock_bulk_admin - products_to_broadcast count: {len(products_to_broadcast)}")
         for p in products_to_broadcast:
-            print(f"[DEBUG] Product: {p[2]}, Added: {p[1]}, Stock: {p[4]}")
+            print(f"[DEBUG] Product: {p['product_name']}, Added: {p['added_count']}, Stock: {p['new_stock']}")
         
         return report, products_to_broadcast
 
     except Exception as e:
+        print(f"[DEBUG] Error in add_stock_bulk_admin: {e}")
         return f"❌ Error adding stock: {e}", []
-
 
 def get_all_products_admin():
     products = database.get_all_products()

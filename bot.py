@@ -1050,9 +1050,21 @@ async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_T
         
         await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
 
+        print(f"[DEBUG] products_to_broadcast from admin: {products_to_broadcast}")
+        print(f"[DEBUG] Type: {type(products_to_broadcast)}")
+        print(f"[DEBUG] Length: {len(products_to_broadcast) if products_to_broadcast else 0}")
+
         # Sirf stock add hone par users ko broadcast karega with custom emojis
         if products_to_broadcast and len(products_to_broadcast) > 0:
-            for product_id, added_count, product_name, emoji_id, new_stock in products_to_broadcast:
+            print(f"[DEBUG] Broadcasting to {len(products_to_broadcast)} products...")
+            
+            for product_data in products_to_broadcast:
+                product_id = product_data['product_id']
+                added_count = product_data['added_count']
+                product_name = product_data['product_name']
+                emoji_id = product_data['emoji_id']
+                new_stock = product_data['new_stock']
+                
                 product = database.get_product(product_id)
                 if product:
                     # Product ki custom emoji
@@ -1060,12 +1072,14 @@ async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_T
                     
                     broadcast_text = (
                         f"{ce('announcement')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('announcement')}\n\n"
-                        f"{ce('confirm')} <b> STOCK UPDATED! </b> {ce('confirm')}\n\n"
+                        f"{ce('confirm')} <b>✨ STOCK UPDATED! ✨</b> {ce('confirm')}\n\n"
                         f"{product_emoji} <b>{html_escape(product_name)}</b>\n\n"
                         f"{ce('confirm')} <b>{added_count}</b> new items added!\n"
                         f"{ce('box')} <b>Available Stock:</b> {new_stock}\n\n"
                         f"{ce('order')} <b>Order now before stock runs out!</b>"
                     )
+                    
+                    print(f"[DEBUG] Sending broadcast for: {product_name}")
                     
                     await broadcast_to_all_users(
                         context, 
@@ -1073,10 +1087,17 @@ async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_T
                         reply_markup=product_purchase_keyboard(product, "success"), 
                         parse_mode='HTML'
                     )
-                    
+                    print(f"[DEBUG] Broadcast sent for: {product_name}")
+        else:
+            print(f"[DEBUG] No products to broadcast - products_to_broadcast is empty or None")
+            
     except Exception as e:
+        print(f"[DEBUG] Error in handle_admin_add_items: {e}")
+        import traceback
+        traceback.print_exc()
         await update.message.reply_text(f"❌ Error: {e}", reply_markup=utils.admin_main_keyboard())
     return ConversationHandler.END
+
 async def handle_admin_edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not admin.is_admin(update.effective_user.id):
         return ConversationHandler.END
