@@ -1,7 +1,11 @@
 import os
 
 TOKEN = os.getenv("TOKEN", "").strip()
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0").strip())
+ADMIN_IDS = [
+    int(admin_id.strip())
+    for admin_id in os.getenv("ADMIN_IDS", "").split(",")
+    if admin_id.strip().isdigit()
+]
 
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "").strip()
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "").strip()
