@@ -90,6 +90,54 @@ def product_update_message(title, product, lines=None):
     return text
 
 
+async def broadcast_stock_updates(context: ContextTypes.DEFAULT_TYPE, products_to_broadcast):
+    """
+    Jab admin stock add kare, ye function tamam users ko updated product ki notification bhejta hai.
+    Ye sirf stock add par chalega.
+    """
+    if not products_to_broadcast:
+        logger.info("[STOCK BROADCAST] No products to broadcast.")
+        return 0, 0
+
+    total_sent = 0
+    total_users = 0
+
+    for product_data in products_to_broadcast:
+        product_id = product_data.get("product_id")
+        added_count = product_data.get("added_count", 0)
+        product_name = product_data.get("product_name", "Unknown")
+        new_stock = product_data.get("new_stock", 0)
+
+        product = database.get_product(product_id)
+
+        if not product:
+            logger.warning(f"[STOCK BROADCAST] Product not found: {product_id}")
+            continue
+
+        broadcast_text = (
+            f"{ce('announcement')} <b>STOCK UPDATED!</b> {ce('announcement')}\n\n"
+            f"{ce('box')} <b>Product:</b> {html_escape(str(product_name))}\n"
+            f"{ce('confirm')} <b>New Stock Added:</b> {added_count}\n"
+            f"{ce('box')} <b>Available Stock:</b> {new_stock}\n\n"
+            f"{ce('order')} <b>Order now before stock runs out!</b>"
+        )
+
+        logger.info(f"[STOCK BROADCAST] Sending stock update for product {product_id}: {product_name}")
+
+        sent, total = await broadcast_to_all_users(
+            context,
+            broadcast_text,
+            reply_markup=product_purchase_keyboard(product, "success"),
+            parse_mode="HTML"
+        )
+
+        total_sent += sent
+        total_users = max(total_users, total)
+
+    return total_sent, total_users
+
+
+
 async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text: str, parse_mode: str = "Markdown"):
     try:
         await context.bot.send_message(chat_id=config.ADMIN_ID, text=text, parse_mode=parse_mode)
@@ -100,13 +148,27 @@ async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text: str, parse_mod
 async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, reply_markup=None, parse_mode: str = "Markdown"):
     users = database.get_all_users()
     sent = 0
+    failed = 0
+
+    logger.info(f"[BROADCAST] Starting broadcast to {len(users)} users")
+
     for user in users:
         try:
-            await context.bot.send_message(chat_id=user[0], text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+            chat_id = user[0]
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
             sent += 1
-        except Exception:
-            pass
+        except Exception as e:
+            failed += 1
+            logger.error(f"[BROADCAST] Failed for user {user[0]}: {e}")
+
+    logger.info(f"[BROADCAST] Done. Sent={sent}, Failed={failed}, Total={len(users)}")
     return sent, len(users)
+
 
 
 (
@@ -1044,59 +1106,40 @@ async def handle_admin_bulk_add_products(update: Update, context: ContextTypes.D
 async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not admin.is_admin(update.effective_user.id):
         return ConversationHandler.END
+
     try:
         stock_sections = admin.parse_stock_bulk_format(update.message.text)
-        msg, products_to_broadcast = admin.add_stock_bulk_admin(stock_sections)
-        
-        await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
+        result = admin.add_stock_bulk_admin(stock_sections)
 
-        print(f"[DEBUG] products_to_broadcast from admin: {products_to_broadcast}")
-        print(f"[DEBUG] Type: {type(products_to_broadcast)}")
-        print(f"[DEBUG] Length: {len(products_to_broadcast) if products_to_broadcast else 0}")
-
-        # Sirf stock add hone par users ko broadcast karega with custom emojis
-        if products_to_broadcast and len(products_to_broadcast) > 0:
-            print(f"[DEBUG] Broadcasting to {len(products_to_broadcast)} products...")
-            
-            for product_data in products_to_broadcast:
-                product_id = product_data['product_id']
-                added_count = product_data['added_count']
-                product_name = product_data['product_name']
-                emoji_id = product_data['emoji_id']
-                new_stock = product_data['new_stock']
-                
-                product = database.get_product(product_id)
-                if product:
-                    # Product ki custom emoji
-                    product_emoji = emoji_id if emoji_id else "📦"
-                    
-                    broadcast_text = (
-                        f"{ce('announcement')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('announcement')}\n\n"
-                        f"{ce('confirm')} <b>✨ STOCK UPDATED! ✨</b> {ce('confirm')}\n\n"
-                        f"{product_emoji} <b>{html_escape(product_name)}</b>\n\n"
-                        f"{ce('confirm')} <b>{added_count}</b> new items added!\n"
-                        f"{ce('box')} <b>Available Stock:</b> {new_stock}\n\n"
-                        f"{ce('order')} <b>Order now before stock runs out!</b>"
-                    )
-                    
-                    print(f"[DEBUG] Sending broadcast for: {product_name}")
-                    
-                    await broadcast_to_all_users(
-                        context, 
-                        broadcast_text, 
-                        reply_markup=product_purchase_keyboard(product, "success"), 
-                        parse_mode='HTML'
-                    )
-                    print(f"[DEBUG] Broadcast sent for: {product_name}")
+        if isinstance(result, tuple):
+            msg, products_to_broadcast = result
         else:
-            print(f"[DEBUG] No products to broadcast - products_to_broadcast is empty or None")
-            
+            msg = result
+            products_to_broadcast = []
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+
+        sent, total = await broadcast_stock_updates(context, products_to_broadcast)
+
+        if products_to_broadcast:
+            await update.message.reply_text(
+                f"📢 Stock update notification sent to {sent}/{total} users.",
+                reply_markup=utils.admin_main_keyboard()
+            )
+
     except Exception as e:
-        print(f"[DEBUG] Error in handle_admin_add_items: {e}")
-        import traceback
-        traceback.print_exc()
-        await update.message.reply_text(f"❌ Error: {e}", reply_markup=utils.admin_main_keyboard())
+        logger.exception(f"[ADMIN ADD STOCK] Error: {e}")
+        await update.message.reply_text(
+            f"❌ Error: {e}",
+            reply_markup=utils.admin_main_keyboard()
+        )
+
     return ConversationHandler.END
+
 
 async def handle_admin_edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not admin.is_admin(update.effective_user.id):
@@ -1220,12 +1263,27 @@ async def cmd_addproduct_data(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def cmd_additems(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not admin.is_admin(update.effective_user.id):
         return
+
     try:
         raw = update.message.text.replace('/additems ', '', 1)
         stock_sections = admin.parse_stock_bulk_format(raw)
-        msg, _ = admin.add_stock_bulk_admin(stock_sections)
+        result = admin.add_stock_bulk_admin(stock_sections)
+
+        if isinstance(result, tuple):
+            msg, products_to_broadcast = result
+        else:
+            msg = result
+            products_to_broadcast = []
+
         await update.message.reply_text(msg, parse_mode='Markdown')
+
+        sent, total = await broadcast_stock_updates(context, products_to_broadcast)
+
+        if products_to_broadcast:
+            await update.message.reply_text(f"📢 Stock update notification sent to {sent}/{total} users.")
+
     except Exception as e:
+        logger.exception(f"[CMD ADDITEMS] Error: {e}")
         await update.message.reply_text(f"❌ Error: {e}")
 
 
