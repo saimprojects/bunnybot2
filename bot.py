@@ -132,7 +132,7 @@ async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, 
 
 
 # ══════════════════════════════════════════════════════════
-#   START - WELCOME MESSAGE (Clean & Professional)
+#   START - WELCOME MESSAGE
 # ══════════════════════════════════════════════════════════
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -155,14 +155,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     first_name = html_escape(user.first_name or "there")
     
     welcome_text = (
-        f"{ce('welcome_star')} <b> Bunny Tools Premium </b> {ce('welcome_star')}\n\n"
-        f"{ce('diamond')} <b> Premium Digital Products with Instant Delivery</b> {ce('diamond')}\n"
-        f"{ce('stats')} <b> Fast • Secure • Automated</b> {ce('stats')}\n\n"
-        f"{ce('products')} <b> Products</b>\n"
-        f"{ce('wallet')} <b> Wallet</b>\n"
-        f"{ce('profile')} <b> Profile</b>\n"
-        f"{ce('support_center')} <b>Support</b>\n\n"
-        f"{ce('choose_option')} <b> Choose an option below</b>"
+        f"{ce('welcome_star')} <b>✨ Bunny Tools Premium ✨</b> {ce('welcome_star')}\n\n"
+        f"{ce('diamond')} <b>💎 Premium Digital Products with Instant Delivery</b> {ce('diamond')}\n"
+        f"{ce('stats')} <b>⚡ Fast • Secure • Automated</b> {ce('stats')}\n\n"
+        f"{ce('products')} <b>🛍️ Products</b>\n"
+        f"{ce('wallet')} <b>💰 Wallet</b>\n"
+        f"{ce('profile')} <b>👤 Profile</b>\n"
+        f"{ce('support_center')} <b>🆘 Support</b>\n\n"
+        f"{ce('choose_option')} <b>👇 Choose an option below</b>"
     )
 
     if update.message:
@@ -1017,12 +1017,9 @@ async def handle_admin_add_product(update: Update, context: ContextTypes.DEFAULT
         msg = admin.add_product_admin(data[0], data[1], float(data[2]), data[3], data[4], data[5])
         await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
 
-        if msg.startswith("✅"):
-            product = find_recent_product_by_name(data[0])
-            await broadcast_to_all_users(context, product_update_message("New Product Added!", product, [
-                f"{ce('wallet')} Price: <b>{html_escape(str(data[2]))} USDT</b>",
-                f"{ce('confirm')} Status: <b>Available Soon</b>",
-            ]), reply_markup=product_purchase_keyboard(product, "success"), parse_mode='HTML')
+        # Sirf admin ko message, users ko nahi bhejna
+        # Broadcast removed - sirf stock add par hi jayega
+
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}", reply_markup=utils.admin_main_keyboard())
     return ConversationHandler.END
@@ -1036,13 +1033,9 @@ async def handle_admin_bulk_add_products(update: Update, context: ContextTypes.D
         msg = admin.add_bulk_products_admin(products_data)
         await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
 
-        if msg.startswith("✅"):
-            for product_data in products_data:
-                product = find_recent_product_by_name(product_data["name"])
-                await broadcast_to_all_users(context, product_update_message("New Product Added!", product, [
-                    f"{ce('wallet')} Price: <b>{html_escape(str(product_data['price']))} USDT</b>",
-                    f"{ce('confirm')} Status: <b>Available Soon</b>",
-                ]), reply_markup=product_purchase_keyboard(product, "success"), parse_mode='HTML')
+        # Sirf admin ko message, users ko nahi bhejna
+        # Broadcast removed - sirf stock add par hi jayega
+
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}", reply_markup=utils.admin_main_keyboard())
     return ConversationHandler.END
@@ -1053,17 +1046,32 @@ async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_T
         return ConversationHandler.END
     try:
         stock_sections = admin.parse_stock_bulk_format(update.message.text)
-        msg = admin.add_stock_bulk_admin(stock_sections)
+        msg, products_to_broadcast = admin.add_stock_bulk_admin(stock_sections)
+        
         await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
 
-        if msg.startswith("📦"):
-            for product_id, items_data in stock_sections:
+        # Sirf stock add hone par users ko broadcast karega with custom emoji
+        if products_to_broadcast:
+            for product_id, added_count, product_name, emoji_id, new_stock in products_to_broadcast:
                 product = database.get_product(product_id)
                 if product:
-                    await broadcast_to_all_users(context, product_update_message("Stock Updated!", product, [
-                        f"{ce('confirm')} New Stock Added: <b>{len(items_data)}</b>",
-                        f"{ce('box')} Available Now: <b>{product[4]}</b>",
-                    ]), reply_markup=product_purchase_keyboard(product, "success"), parse_mode='HTML')
+                    # Product ki custom emoji
+                    product_emoji = emoji_id if emoji_id else "📦"
+                    
+                    broadcast_text = (
+                        f"🎉 <b>Stock Updated!</b> 🎉\n\n"
+                        f"{product_emoji} <b>{html_escape(product_name)}</b>\n\n"
+                        f"✅ <b>{added_count}</b> new items added!\n"
+                        f"📦 <b>Available Stock:</b> {new_stock}\n\n"
+                        f"🛒 <b>Order now before stock runs out!</b>"
+                    )
+                    
+                    await broadcast_to_all_users(
+                        context, 
+                        broadcast_text, 
+                        reply_markup=product_purchase_keyboard(product, "success"), 
+                        parse_mode='HTML'
+                    )
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}", reply_markup=utils.admin_main_keyboard())
     return ConversationHandler.END
@@ -1194,7 +1202,7 @@ async def cmd_additems(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         raw = update.message.text.replace('/additems ', '', 1)
         stock_sections = admin.parse_stock_bulk_format(raw)
-        msg = admin.add_stock_bulk_admin(stock_sections)
+        msg, _ = admin.add_stock_bulk_admin(stock_sections)
         await update.message.reply_text(msg, parse_mode='Markdown')
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")

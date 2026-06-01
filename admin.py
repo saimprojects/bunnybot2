@@ -79,14 +79,13 @@ def parse_product_block(block):
         "duration": fields[1],
         "price": float(fields[2]),
         "stock": 0,
-        # Database compatibility ke liye rating/features default save rahenge,
-        # lekin admin format aur product details mein show/use nahi honge.
         "rating": 0,
         "description": fields[3],
         "features": [],
         "note": fields[4],
         "emoji_id": fields[5],
     }
+
 
 def parse_bulk_products_format(text):
     blocks = re.findall(r'\[(.*?)\]', text, flags=re.DOTALL)
@@ -104,15 +103,16 @@ def add_product_admin(name, duration, price, description, note, emoji_id):
             duration,
             price,
             0,
-            0,          # rating default, hidden
+            0,
             description,
-            [],         # features default, hidden
+            [],
             note,
             emoji_id
         )
         return f"✅ Product *{name}* added successfully with stock `0` and sticker ID `{emoji_id}`."
     except Exception as e:
         return f"❌ Error adding product: {e}"
+
 
 def add_bulk_products_admin(products_data):
     try:
@@ -139,9 +139,11 @@ def add_bulk_products_admin(products_data):
 
 
 def add_stock_bulk_admin(stock_sections):
+    """Returns: (message, product_data_list_for_broadcast)"""
     try:
         total_added = 0
         report = "📦 *Stock Add Report:*\n\n"
+        products_to_broadcast = []  # (product_id, added_count, product_name, emoji_id, new_stock)
 
         for product_id, items_data in stock_sections:
             product = database.get_product(product_id)
@@ -158,15 +160,20 @@ def add_stock_bulk_admin(stock_sections):
 
             if added_count > 0:
                 database.update_product_stock(product_id, added_count)
+                # Get updated stock
+                updated_product = database.get_product(product_id)
+                new_stock = updated_product[4] if updated_product else 0
+                emoji_id = updated_product[9] if updated_product and len(updated_product) > 9 else ""
+                products_to_broadcast.append((product_id, added_count, product[1], emoji_id, new_stock))
 
             total_added += added_count
             report += f"✅ Product ID `{product_id}`: Added `{added_count}` items.\n"
 
         report += f"\n━━━━━━━━━━━━━━━━━━\nTotal Added: *{total_added}*"
-        return report
+        return report, products_to_broadcast
 
     except Exception as e:
-        return f"❌ Error adding stock: {e}"
+        return f"❌ Error adding stock: {e}", []
 
 
 def get_all_products_admin():
