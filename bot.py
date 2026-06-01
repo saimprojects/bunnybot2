@@ -155,14 +155,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     first_name = html_escape(user.first_name or "there")
     
     welcome_text = (
-        f"{ce('welcome_star')} <b>✨ Bunny Tools Premium ✨</b> {ce('welcome_star')}\n\n"
-        f"{ce('diamond')} <b>💎 Premium Digital Products with Instant Delivery</b> {ce('diamond')}\n"
-        f"{ce('stats')} <b>⚡ Fast • Secure • Automated</b> {ce('stats')}\n\n"
-        f"{ce('products')} <b>🛍️ Products</b>\n"
-        f"{ce('wallet')} <b>💰 Wallet</b>\n"
-        f"{ce('profile')} <b>👤 Profile</b>\n"
-        f"{ce('support_center')} <b>🆘 Support</b>\n\n"
-        f"{ce('choose_option')} <b>👇 Choose an option below</b>"
+        f"{ce('welcome_star')} <b> Bunny Tools Premium </b> {ce('welcome_star')}\n\n"
+        f"{ce('diamond')} <b> Premium Digital Products with Instant Delivery</b> {ce('diamond')}\n"
+        f"{ce('stats')} <b> Fast • Secure • Automated</b> {ce('stats')}\n\n"
+        f"{ce('products')} <b> Products</b>\n"
+        f"{ce('wallet')} <b> Wallet</b>\n"
+        f"{ce('profile')} <b> Profile</b>\n"
+        f"{ce('support_center')} <b>Support</b>\n\n"
+        f"{ce('choose_option')} <b> Choose an option below</b>"
     )
 
     if update.message:
