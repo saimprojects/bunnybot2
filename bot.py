@@ -1050,8 +1050,8 @@ async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_T
         
         await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
 
-        # Sirf stock add hone par users ko broadcast karega with custom emoji
-        if products_to_broadcast:
+        # Sirf stock add hone par users ko broadcast karega with custom emojis
+        if products_to_broadcast and len(products_to_broadcast) > 0:
             for product_id, added_count, product_name, emoji_id, new_stock in products_to_broadcast:
                 product = database.get_product(product_id)
                 if product:
@@ -1059,11 +1059,12 @@ async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_T
                     product_emoji = emoji_id if emoji_id else "📦"
                     
                     broadcast_text = (
-                        f"🎉 <b>Stock Updated!</b> 🎉\n\n"
+                        f"{ce('announcement')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {ce('announcement')}\n\n"
+                        f"{ce('confirm')} <b> STOCK UPDATED! </b> {ce('confirm')}\n\n"
                         f"{product_emoji} <b>{html_escape(product_name)}</b>\n\n"
-                        f"✅ <b>{added_count}</b> new items added!\n"
-                        f"📦 <b>Available Stock:</b> {new_stock}\n\n"
-                        f"🛒 <b>Order now before stock runs out!</b>"
+                        f"{ce('confirm')} <b>{added_count}</b> new items added!\n"
+                        f"{ce('box')} <b>Available Stock:</b> {new_stock}\n\n"
+                        f"{ce('order')} <b>Order now before stock runs out!</b>"
                     )
                     
                     await broadcast_to_all_users(
@@ -1072,11 +1073,10 @@ async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_T
                         reply_markup=product_purchase_keyboard(product, "success"), 
                         parse_mode='HTML'
                     )
+                    
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}", reply_markup=utils.admin_main_keyboard())
     return ConversationHandler.END
-
-
 async def handle_admin_edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not admin.is_admin(update.effective_user.id):
         return ConversationHandler.END

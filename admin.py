@@ -143,7 +143,7 @@ def add_stock_bulk_admin(stock_sections):
     try:
         total_added = 0
         report = "📦 *Stock Add Report:*\n\n"
-        products_to_broadcast = []  # (product_id, added_count, product_name, emoji_id, new_stock)
+        products_to_broadcast = []
 
         for product_id, items_data in stock_sections:
             product = database.get_product(product_id)
@@ -160,7 +160,6 @@ def add_stock_bulk_admin(stock_sections):
 
             if added_count > 0:
                 database.update_product_stock(product_id, added_count)
-                # Get updated stock
                 updated_product = database.get_product(product_id)
                 new_stock = updated_product[4] if updated_product else 0
                 emoji_id = updated_product[9] if updated_product and len(updated_product) > 9 else ""
@@ -170,6 +169,12 @@ def add_stock_bulk_admin(stock_sections):
             report += f"✅ Product ID `{product_id}`: Added `{added_count}` items.\n"
 
         report += f"\n━━━━━━━━━━━━━━━━━━\nTotal Added: *{total_added}*"
+        
+        # Debug print
+        print(f"[DEBUG] Products to broadcast: {len(products_to_broadcast)}")
+        for p in products_to_broadcast:
+            print(f"[DEBUG] Product: {p[2]}, Added: {p[1]}, Stock: {p[4]}")
+        
         return report, products_to_broadcast
 
     except Exception as e:
