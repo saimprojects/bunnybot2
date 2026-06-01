@@ -15,10 +15,6 @@ EMOJIS = {
     "confirm": "5206607081334906820",      # ✅
     "warning": "5210952531676504517",      # ❌
     "description": "5282843764451195532",  # 📖
-    "info": "5427168083074628963",         # ℹ️ / 💎
-    "box": "5231012545799666522",          # 📦
-    "diamond": "5427168083074628963",      # 💎
-    "stats": "5231200819986047254",        # 📊
 }
 
 
@@ -61,24 +57,18 @@ def get_product_details_message(product_id):
 
     product_icon = get_product_icon(emoji_id)
 
-    # Professional product details with custom emojis
+    # Clean product details with custom emojis only
     message = (
-        f"{product_icon} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {product_icon}\n\n"
-        f"{product_icon} <b>✨ PRODUCT DETAILS</b> {product_icon}\n\n"
-        f"{product_icon} <b>┌── Name:</b> <code>{safe(name)}</code>\n"
-        f"{tg(EMOJIS['date'], '📅')} <b>├── Duration:</b> <code>{safe(duration)}</code>\n"
-        f"{tg(EMOJIS['wallet'], '💰')} <b>├── Price:</b> <code>{safe(price)} USDT</code>\n"
-        f"{tg(EMOJIS['box'], '📦')} <b>└── Stock:</b> <code>{safe(stock)} left</code>\n\n"
-        f"{tg(EMOJIS['description'], '📖')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {tg(EMOJIS['description'], '📖')}\n"
-        f"{tg(EMOJIS['description'], '📖')} <b>📝 Description</b>\n"
-        f"{tg(EMOJIS['description'], '📖')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b>\n"
-        f"<i>{safe(description)}</i>\n\n"
-        f"{tg(EMOJIS['warning'], '⚠️')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {tg(EMOJIS['warning'], '⚠️')}\n"
-        f"{tg(EMOJIS['warning'], '⚠️')} <b>❗ Important Note</b>\n"
-        f"{tg(EMOJIS['warning'], '⚠️')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b>\n"
-        f"<i>{safe(note)}</i>\n\n"
-        f"{tg(EMOJIS['confirm'], '✅')} <b>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</b> {tg(EMOJIS['confirm'], '✅')}\n"
-        f"{tg(EMOJIS['sticker'], '👇')} <b>Click 'Order Now' to purchase this product</b>"
+        f"{product_icon} <b>Product Details</b>\n\n"
+        f"{product_icon} <b>Name:</b> {safe(name)}\n"
+        f"{tg(EMOJIS['date'], '📅')} <b>Duration:</b> {safe(duration)}\n"
+        f"{tg(EMOJIS['wallet'], '💰')} <b>Price:</b> {safe(price)} USDT\n"
+        f"{tg(EMOJIS['product'], '📦')} <b>Stock:</b> {safe(stock)}\n\n"
+        f"{tg(EMOJIS['description'], '📖')} <b>Description:</b>\n"
+        f"{safe(description)}\n\n"
+        f"{tg(EMOJIS['warning'], '⚠️')} <b>Note:</b>\n"
+        f"{safe(note)}\n\n"
+        f"━━━━━━━━━━━━━━━━━━"
     )
 
     return message
