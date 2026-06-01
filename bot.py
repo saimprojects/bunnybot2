@@ -385,7 +385,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif data == 'pay_binance':
         total_amount = context.user_data.get('total_amount')
         context.user_data['payment_method'] = 'Binance Pay ID'
-        # Step 1: Binance ID + amount — "I have sent payment" button
         await query.edit_message_text(
             payment.get_binance_payment_details(total_amount),
             reply_markup=utils.binance_payment_keyboard(),
@@ -395,12 +394,48 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif data == 'pay_wallet':
         total_amount = context.user_data.get('total_amount')
-        context.user_data['payment_method'] = 'Binance Pay ID'
-        await query.edit_message_text(
-            payment.get_binance_payment_details(total_amount),
-            reply_markup=utils.binance_payment_keyboard(),
-            parse_mode='HTML'
+        user_id = update.effective_user.id
+        user = database.get_user(user_id)
+        current_balance = user[3] if user else 0
+        
+        if current_balance >= total_amount:
+            # Sufficient balance, show confirmation
+            await query.edit_message_text(
+                payment.get_wallet_payment_summary(user_id, total_amount),
+                reply_markup=utils.wallet_payment_keyboard(),
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+        else:
+            # Insufficient balance
+            required = round(total_amount - current_balance, 4)
+            await query.edit_message_text(
+                f"{ce('cancel')} <b>Insufficient Balance</b>\n\n"
+                f"Your Balance: <b>{current_balance} USDT</b>\n"
+                f"Required: <b>{total_amount} USDT</b>\n"
+                f"Short by: <b>{required} USDT</b>\n\n"
+                f"Please deposit funds to your wallet first.",
+                reply_markup=utils.insufficient_balance_keyboard(),
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+
+    elif data == 'confirm_wallet_payment':
+        product_id = context.user_data.get('current_product_id')
+        quantity = context.user_data.get('quantity')
+        total_amount = context.user_data.get('total_amount')
+        
+        success, msg = payment.process_wallet_payment(
+            user_id,
+            utils.generate_order_id(),
+            product_id,
+            quantity,
+            total_amount
         )
+        if success:
+            await deliver_product(update, context, 'Wallet')
+        else:
+            await query.edit_message_text(msg, reply_markup=utils.payment_method_keyboard(), parse_mode='HTML')
         return ConversationHandler.END
 
     elif data == 'back_to_payment_method':
@@ -418,7 +453,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             f"━━━━━━━━━━━━━━━━━━\n"
             f"💵 *Total: {total_amount} USDT*\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"*Pay using Binance Pay ID:*"
+            f"*Choose payment method:*"
         )
         await query.edit_message_text(text, reply_markup=utils.payment_method_keyboard(), parse_mode='Markdown')
         return ConversationHandler.END
@@ -428,7 +463,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
 
     elif data == 'check_binance_payment':
-        # Step 2: User "I have sent payment" click kiya — Order ID maango, sirf Cancel button
         await query.edit_message_text(
             "✅ <b>Payment Sent?</b>\n\n"
             "Send your <b>Binance Order ID / off-chain transaction reference</b> here.\n\n"
@@ -438,20 +472,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return BINANCE_ORDER_ID
 
-    elif data == 'confirm_wallet_payment':
-        success, msg = payment.process_wallet_payment(
-            user_id,
-            utils.generate_order_id(),
-            context.user_data.get('current_product_id'),
-            context.user_data.get('quantity'),
-            context.user_data.get('total_amount')
-        )
-        if success:
-            await deliver_product(update, context, 'Wallet')
-        else:
-            await query.edit_message_text(msg, reply_markup=utils.payment_method_keyboard(), parse_mode='Markdown')
-        return ConversationHandler.END
-
     elif data == 'wallet':
         user = database.get_user(user_id)
         transactions = database.get_user_transactions(user_id)
@@ -460,7 +480,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
 
     elif data == 'deposit_wallet':
-        # Step 1: Amount maango — sirf Back button, koi payment button nahi
         await query.edit_message_text(
             f"{ce('wallet')} <b>Wallet Deposit</b>\n\n"
             "Enter amount to top up with Binance Pay ID.\n"
@@ -471,7 +490,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return WALLET_DEPOSIT_AMOUNT
 
     elif data == 'check_deposit_payment':
-        # Step 3: User "I have sent payment" click kiya — ref maango, sirf Cancel button
         deposit_amount = context.user_data.get('wallet_deposit_amount')
         if not deposit_amount:
             await query.edit_message_text(
@@ -555,7 +573,6 @@ async def handle_wallet_deposit_amount(update: Update, context: ContextTypes.DEF
 
         context.user_data['wallet_deposit_amount'] = amount
 
-        # Step 2: Binance ID + amount show karo — "I have sent payment" button
         await update.message.reply_text(
             payment.get_binance_wallet_deposit_details(amount),
             reply_markup=utils.deposit_wallet_keyboard(),
@@ -599,7 +616,6 @@ async def handle_wallet_deposit_ref(update: Update, context: ContextTypes.DEFAUL
 
 
 async def handle_binance_order_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # Step 3: User ne Order ID type kiya — verify karo
     binance_order_id = update.message.text.strip()
     user_id = update.effective_user.id
 
@@ -650,7 +666,7 @@ async def handle_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"━━━━━━━━━━━━━━━━━━\n"
             f"💵 *Total: {total_amount} USDT*\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"*Pay using Binance Pay ID:*",
+            f"*Choose payment method:*",
             reply_markup=utils.payment_method_keyboard(),
             parse_mode='Markdown'
         )

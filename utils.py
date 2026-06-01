@@ -98,17 +98,16 @@ def quantity_selection_keyboard():
 
 
 def payment_method_keyboard():
+    """Two payment options: Binance Pay ID OR Wallet"""
     return build_menu([
-        btn("Pay with Binance Pay ID", callback_data="pay_binance", style="success", emoji_id=EMOJIS.get("wallet")),
+        btn("💳 Pay with Binance Pay ID", callback_data="pay_binance", style="success", emoji_id=EMOJIS.get("wallet")),
+        btn("👛 Pay with Wallet", callback_data="pay_wallet", style="primary", emoji_id=EMOJIS.get("wallet")),
         back_btn("Back to Quantity", callback_data="back_to_quantity", style="danger"),
     ], n_cols=1)
 
 
 def binance_payment_keyboard():
-    """
-    Purchase: Payment details message par.
-    Buttons: I have sent payment + Cancel Order.
-    """
+    """Purchase: Payment details message par. Buttons: I have sent payment + Cancel Order"""
     return build_menu([
         btn("I have sent payment", callback_data="check_binance_payment", style="success", emoji_id=EMOJIS["confirm"]),
         btn("Cancel Order", callback_data="cancel_order", style="danger", emoji_id=EMOJIS["cancel"]),
@@ -116,30 +115,21 @@ def binance_payment_keyboard():
 
 
 def ask_order_id_keyboard():
-    """
-    Purchase: Jab bot Order ID maange.
-    Sirf Cancel — user ko type karna hai.
-    """
+    """Purchase: Jab bot Order ID maange. Sirf Cancel"""
     return build_menu([
         btn("Cancel Order", callback_data="cancel_order", style="danger", emoji_id=EMOJIS["cancel"]),
     ], n_cols=1)
 
 
 def deposit_enter_amount_keyboard():
-    """
-    Deposit Step 1: Amount maangne wala step.
-    Sirf Back — koi 'I have sent payment' button nahi.
-    """
+    """Deposit Step 1: Amount maangne wala step. Sirf Back"""
     return build_menu([
         back_btn("Back", callback_data="wallet", style="danger"),
     ], n_cols=1)
 
 
 def deposit_wallet_keyboard():
-    """
-    Deposit Step 2: Binance ID + amount show karne wala step.
-    Buttons: I have sent payment + Back.
-    """
+    """Deposit Step 2: Binance ID + amount show karne wala step. Buttons: I have sent payment + Back"""
     return build_menu([
         btn("I have sent payment", callback_data="check_deposit_payment", style="success", emoji_id=EMOJIS["confirm"]),
         back_btn("Back", callback_data="wallet", style="danger"),
@@ -147,16 +137,14 @@ def deposit_wallet_keyboard():
 
 
 def ask_deposit_ref_keyboard():
-    """
-    Deposit Step 3: Jab bot Order ID/ref maange.
-    Sirf Cancel — user ko type karna hai.
-    """
+    """Deposit Step 3: Jab bot Order ID/ref maange. Sirf Cancel"""
     return build_menu([
         back_btn("Cancel", callback_data="wallet", style="danger"),
     ], n_cols=1)
 
 
 def wallet_payment_keyboard():
+    """Wallet payment confirmation keyboard"""
     buttons = [
         btn("Confirm & Pay", callback_data='confirm_wallet_payment', style="success", emoji_id=EMOJIS["confirm"]),
         btn("Cancel", callback_data='cancel_order', style="danger", emoji_id=EMOJIS["cancel"]),
