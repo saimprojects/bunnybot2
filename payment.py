@@ -22,7 +22,7 @@ import urllib.request
 import urllib.error
 from html import escape as html_escape
 import config
-from . import database
+import database
 
 
 # Custom Emoji IDs for payment messages.  These are defined here to
