@@ -14,7 +14,11 @@ import config
 # history and new admin actions.  Importing from updated_bot ensures
 # that the correct versions are used even if similarly named modules
 # exist in the project root.
-from updated_bot import database, products, payment, admin, utils
+import database
+import products
+import payment
+import admin
+import utils
 
 
 
@@ -173,8 +177,8 @@ async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, 
 
 
 
-    (
-        QUANTITY,
+(
+    QUANTITY,
         WITHDRAW_AMOUNT,
         WITHDRAW_ADDRESS,
         CONTACT_ADMIN,
@@ -195,7 +199,7 @@ async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, 
         ADMIN_EDIT_DETAILS,
         ADMIN_EDIT_CREDENTIALS,
         ADMIN_SET_FREEBIE,
-    ) = range(21)
+) = range(21)
 
 
 # ══════════════════════════════════════════════════════════
