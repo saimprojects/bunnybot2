@@ -6,3 +6,5 @@ httpx==0.28.1
 idna==3.17
 python-telegram-bot==22.7
 socksio==1.0.0
+psycopg2-binary
+requests
