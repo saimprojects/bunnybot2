@@ -21,8 +21,7 @@ import urllib.parse
 import urllib.request
 import urllib.error
 from html import escape as html_escape
-
-from . import config
+import config
 from . import database
 
 
