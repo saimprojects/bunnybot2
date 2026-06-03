@@ -2,6 +2,10 @@ import uuid
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
+# Emoji mapping.  All entries must refer to custom emoji IDs; the
+# fallback emoji characters in the second element of the tuple are
+# intentionally omitted to honour the requirement that only custom
+# emojis be used in the bot UI.
 EMOJIS = {
     "products": "5456140674028019486",
     "purchase_history": "5210956306952758910",
@@ -26,9 +30,14 @@ EMOJIS = {
     "view_products": "5231012545799666522",
     "binance_pay": "6222208096257712941",  # Binance icon custom emoji
     "wallet_pay": "5409048419211682843",   # Wallet icon
+    # Additional icons for new admin actions reuse existing IDs
+    "edit_details": "5451882707875276247",  # reuse edit_stock icon
+    "edit_credentials": "5451882707875276247",  # reuse edit_stock icon
 }
 
+
 def generate_order_id():
+    """Generate a short unique order identifier."""
     return "ORD" + str(uuid.uuid4())[:8].upper()
 
 
@@ -56,7 +65,10 @@ def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
 
 # ─── USER KEYBOARDS ───────────────────────────────────────
 
+
 def main_menu_keyboard():
+    """Return the main menu for users.  Order details has been
+    removed; purchase history now includes full details."""
     keyboard = [
         [btn("Products", callback_data='products', style="success", emoji_id=EMOJIS["products"])],
         [
@@ -109,7 +121,7 @@ def payment_method_keyboard():
 
 
 def binance_payment_keyboard():
-    """Purchase: Payment details message par. Buttons: I have sent payment + Cancel Order"""
+    """Purchase: Payment details message. Buttons: I have sent payment + Cancel Order"""
     return build_menu([
         btn("I have sent payment", callback_data="check_binance_payment", style="success", emoji_id=EMOJIS["confirm"]),
         btn("Cancel Order", callback_data="cancel_order", style="danger", emoji_id=EMOJIS["cancel"]),
@@ -117,21 +129,21 @@ def binance_payment_keyboard():
 
 
 def ask_order_id_keyboard():
-    """Purchase: Jab bot Order ID maange. Sirf Cancel"""
+    """Purchase: When the bot asks for an order ID.  Only Cancel button"""
     return build_menu([
         btn("Cancel Order", callback_data="cancel_order", style="danger", emoji_id=EMOJIS["cancel"]),
     ], n_cols=1)
 
 
 def deposit_enter_amount_keyboard():
-    """Deposit Step 1: Amount maangne wala step. Sirf Back"""
+    """Deposit Step 1: ask for amount.  Only Back button"""
     return build_menu([
         back_btn("Back", callback_data="wallet", style="danger"),
     ], n_cols=1)
 
 
 def deposit_wallet_keyboard():
-    """Deposit Step 2: Binance ID + amount show karne wala step. Buttons: I have sent payment + Back"""
+    """Deposit Step 2: show Binance ID and amount.  Buttons: I have sent payment + Back"""
     return build_menu([
         btn("I have sent payment", callback_data="check_deposit_payment", style="success", emoji_id=EMOJIS["confirm"]),
         back_btn("Back", callback_data="wallet", style="danger"),
@@ -139,7 +151,7 @@ def deposit_wallet_keyboard():
 
 
 def ask_deposit_ref_keyboard():
-    """Deposit Step 3: Jab bot Order ID/ref maange. Sirf Cancel"""
+    """Deposit Step 3: ask for transaction reference.  Only Cancel button"""
     return build_menu([
         back_btn("Cancel", callback_data="wallet", style="danger"),
     ], n_cols=1)
@@ -199,6 +211,7 @@ def product_update_purchase_keyboard(product, style="success"):
 
 # ─── ADMIN KEYBOARDS ──────────────────────────────────────
 
+
 def admin_main_keyboard():
     buttons = [
         btn("Add Product", callback_data='admin_add_product', style="success", emoji_id=EMOJIS["deposit"]),
@@ -206,6 +219,8 @@ def admin_main_keyboard():
         btn("Add Stock/Items", callback_data='admin_add_items', style="primary", emoji_id=EMOJIS["view_products"]),
         btn("Edit Price", callback_data='admin_edit_price', style="primary", emoji_id=EMOJIS["wallet"]),
         btn("Edit Stock", callback_data='admin_edit_stock', style="primary", emoji_id=EMOJIS["edit_stock"]),
+        btn("Edit Details", callback_data='admin_edit_details', style="primary", emoji_id=EMOJIS["edit_details"]),
+        btn("Edit Credentials", callback_data='admin_edit_credentials', style="primary", emoji_id=EMOJIS["edit_credentials"]),
         btn("Add Balance", callback_data='admin_add_balance', style="success", emoji_id=EMOJIS["deposit"]),
         btn("Approve Withdrawal", callback_data='admin_approve_withdrawal', style="success", emoji_id=EMOJIS["confirm"]),
         btn("Broadcast", callback_data='admin_broadcast', style="danger", emoji_id=EMOJIS["broadcast"]),

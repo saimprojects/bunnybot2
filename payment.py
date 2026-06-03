@@ -1,5 +1,3 @@
-import config
-import database
 import time
 import json
 import hmac
@@ -9,8 +7,13 @@ import urllib.request
 import urllib.error
 from html import escape as html_escape
 
+from . import config
+from . import database
 
-# Custom Emoji IDs
+
+# Custom Emoji IDs for payment messages.  These are defined here to
+# avoid importing the full utils module just for confirmation/cancel
+# icons.
 EMOJIS = {
     "cancel": "5210952531676504517",   # ❌
     "confirm": "5206607081334906820",  # ✅
@@ -19,6 +22,10 @@ EMOJIS = {
 
 
 def tg(emoji_id, fallback):
+    """Return a Telegram custom emoji span.
+
+    The fallback is ignored because the bot uses custom emojis only.
+    """
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 
@@ -28,8 +35,8 @@ def safe(value):
 
 def get_binance_pay_id():
     """
-    BINANCE_PAY_ID env mein apni Binance ID / Pay ID set karo.
-    Fallback BINANCE_WALLET_ADDRESS rakha hai taake purana config bhi work kare.
+    Return the configured Binance Pay ID.  ``BINANCE_PAY_ID`` in the
+    environment takes precedence over ``BINANCE_WALLET_ADDRESS``.
     """
     return (
         getattr(config, "BINANCE_PAY_ID", "")
@@ -39,8 +46,8 @@ def get_binance_pay_id():
 
 def sign_query(params):
     """
-    Binance signed endpoint ke liye HMAC SHA256 query signature.
-    /sapi/v1/pay/transactions standard Binance signed endpoint hai.
+    Build a signed query string for Binance signed endpoints.  Uses
+    HMAC SHA256 with the API secret.
     """
     secret = config.BINANCE_API_SECRET.strip()
     query = urllib.parse.urlencode(params)
@@ -92,10 +99,7 @@ def binance_signed_get(path, params):
 
 def get_pay_trade_history(minutes=10, limit=100):
     """
-    Binance Pay History:
-    GET /sapi/v1/pay/transactions
-
-    Last `minutes` ka data fetch karta hai.
+    Fetch Binance Pay transaction history for the last ``minutes`` minutes.
     """
     now_ms = int(time.time() * 1000)
     start_ms = now_ms - (minutes * 60 * 1000)
@@ -111,8 +115,9 @@ def get_pay_trade_history(minutes=10, limit=100):
 
 def get_transaction_amount_usdt(tx):
     """
-    Binance Pay history mein amount main amount field ya fundsDetail ke andar aa sakta hai.
-    USDT amount nikalne ki koshish karta hai.
+    Extract the USDT amount from a Binance Pay transaction.  The amount
+    may be present as a top‑level ``amount`` field or nested within
+    ``fundsDetail``.
     """
     # Direct amount/currency
     try:
@@ -138,10 +143,9 @@ def get_transaction_amount_usdt(tx):
 
 def receiver_matches_our_binance_id(tx):
     """
-    Safety check: payment receiver hamara Binance ID/Pay ID ho.
-    Agar response mein receiverInfo available hai to match karega.
-    Agar API own account ka history de raha hai aur receiverInfo missing/different hai,
-    is check ko soft rakha gaya hai.
+    Verify that the receiver in a transaction matches our configured
+    Binance ID or Pay ID.  Some API responses may omit ``receiverInfo``
+    entirely, in which case this check passes.
     """
     our_id = get_binance_pay_id()
     if not our_id:
@@ -165,13 +169,10 @@ def receiver_matches_our_binance_id(tx):
 
 def find_binance_payment_reference(reference, expected_amount, minutes_order=10, minutes_offchain=5):
     """
-    User ka diya hua Binance Order ID / off-chain transaction reference verify karta hai.
-
-    Logic:
-    - Last 10 minutes ki Binance Pay history fetch.
-    - transactionId ya related reference exact match.
-    - Amount expected_amount ke barabar ya zyada.
-    - Receiver hamara Binance ID/Pay ID.
+    Check Binance Pay history for a transaction matching the provided
+    reference and amount.  The search spans the last ``minutes_order``
+    minutes of order history and ``minutes_offchain`` minutes for
+    off‑chain references.
     """
     ref = str(reference).strip()
     expected = float(expected_amount)
@@ -231,9 +232,10 @@ def find_binance_payment_reference(reference, expected_amount, minutes_order=10,
 
 def process_binance_payment(user_id, order_id, product_id, quantity, total_amount, binance_order_id=None):
     """
-    User Binance Pay ID par payment bhejta hai.
-    Phir user jo Binance Order ID / off-chain transaction reference bhejta hai,
-    bot Binance Pay trade history se auto verify karta hai.
+    Verify a Binance Pay payment for an order.  If the payment matches
+    the expected amount, record a negative transaction in the user's
+    wallet.  The actual creation of the order and delivery of items
+    happens in the main bot logic.
     """
     if not binance_order_id:
         return False, "Binance Order ID / transaction reference missing."
@@ -251,6 +253,8 @@ def process_binance_payment(user_id, order_id, product_id, quantity, total_amoun
     )
 
     if success:
+        # Deduct from wallet to reflect the purchase.  The product
+        # delivery is handled separately after this function returns.
         database.add_transaction(user_id, "Binance Pay Purchase", -float(total_amount))
         return True, f"{tg(EMOJIS['confirm'], '✅')} Payment verified successfully."
 
@@ -350,11 +354,9 @@ def get_wallet_payment_summary(user_id, total_amount):
         if current_balance >= total_amount
         else f"{tg(EMOJIS['cancel'], '❌')} Insufficient"
     )
-
     return (
-        f"👛 <b>Wallet Payment</b>\n\n"
-        f"Your Balance: <b>{safe(current_balance)} USDT</b>\n"
-        f"Total Amount: <b>{safe(total_amount)} USDT</b>\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"Balance Status: <b>{status}</b>"
+        f"{tg(EMOJIS['binance'], '💳')} <b>Wallet Payment Summary</b>\n\n"
+        f"Current Balance: <b>{safe(current_balance)} USDT</b>\n"
+        f"Total Amount: <b>{safe(total_amount)} USDT</b>\n"
+        f"Status: {status}"
     )

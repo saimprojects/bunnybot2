@@ -2,14 +2,19 @@ import sqlite3
 import datetime
 import json
 
+
+
 DATABASE_NAME = 'shop.db'
 
 
 def init_db():
+    """Create all required tables if they don't already exist."""
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
 
-    cursor.execute('''
+    # Users table stores basic account information and wallet
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY,
             username TEXT,
@@ -19,9 +24,12 @@ def init_db():
             referrals INTEGER DEFAULT 0,
             referral_earnings REAL DEFAULT 0.0
         )
-    ''')
+        '''
+    )
 
-    cursor.execute('''
+    # Products table describes products available for purchase
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
@@ -34,9 +42,13 @@ def init_db():
             note TEXT,
             emoji_id TEXT
         )
-    ''')
+        '''
+    )
 
-    cursor.execute('''
+    # Orders table records purchases.  ``delivery_details`` is stored
+    # as JSON so that arbitrary credential structures can be saved.
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS orders (
             id TEXT PRIMARY KEY,
             user_id INTEGER,
@@ -50,9 +62,12 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (product_id) REFERENCES products(id)
         )
-    ''')
+        '''
+    )
 
-    cursor.execute('''
+    # Transactions table keeps a ledger of wallet changes
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -61,9 +76,14 @@ def init_db():
             transaction_date TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
-    ''')
+        '''
+    )
 
-    cursor.execute('''
+    # unsold_items holds stock items that have not yet been sold.
+    # ``item_data`` stores JSON containing the credential fields.  ``is_sold``
+    # flags whether the item has been delivered.
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS unsold_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_id INTEGER,
@@ -73,9 +93,12 @@ def init_db():
             is_sold INTEGER DEFAULT 0,
             FOREIGN KEY (product_id) REFERENCES products(id)
         )
-    ''')
+        '''
+    )
 
-    cursor.execute('''
+    # Withdrawals table stores user withdrawal requests.
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS withdrawals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -85,12 +108,16 @@ def init_db():
             request_date TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
-    ''')
+        '''
+    )
 
+    # Backwards‑compatible schema updates
     cursor.execute("PRAGMA table_info(unsold_items)")
     columns = [row[1] for row in cursor.fetchall()]
     if "item_data" not in columns:
         cursor.execute("ALTER TABLE unsold_items ADD COLUMN item_data TEXT")
+    if "is_sold" not in columns:
+        cursor.execute("ALTER TABLE unsold_items ADD COLUMN is_sold INTEGER DEFAULT 0")
 
     cursor.execute("PRAGMA table_info(products)")
     product_columns = [row[1] for row in cursor.fetchall()]
@@ -186,6 +213,7 @@ def add_product(name, duration, price, stock, rating, description, features, not
 
 
 def update_product_stock(product_id, quantity_change):
+    """Increment or decrement stock by ``quantity_change`` for a product."""
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
     cursor.execute(
@@ -286,6 +314,11 @@ def get_user_transactions(user_id):
 
 
 def add_unsold_item(product_id, item_data, password=None):
+    """Add a new unsold item for a product.  ``item_data`` may be a dict
+    of credential fields or a raw email string.  The JSON-encoded
+    representation of the credentials is stored in ``item_data`` column
+    while e.g. email and password are duplicated in their own columns
+    for quick access."""
     if isinstance(item_data, dict):
         data_dict = item_data
         email_value = data_dict.get("email", "")
@@ -306,6 +339,9 @@ def add_unsold_item(product_id, item_data, password=None):
 
 
 def get_unsold_items(product_id, quantity):
+    """Return up to ``quantity`` unsold items for the given product.  Each
+    returned item is a dict with ``id`` and ``data`` fields.  The
+    ``data`` field contains the decoded credential dictionary."""
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
     cursor.execute(
@@ -331,7 +367,6 @@ def get_unsold_items(product_id, quantity):
                 data = {"email": email, "password": password}
         else:
             data = {"email": email, "password": password}
-
         items.append({"id": item_id, "data": data})
 
     return items
@@ -356,6 +391,54 @@ def get_unsold_count(product_id):
     count = cursor.fetchone()[0]
     conn.close()
     return count
+
+
+def get_sold_count(product_id):
+    """Return the number of items sold for the given product.  This counts
+    unsold_items rows with ``is_sold = 1``."""
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM unsold_items WHERE product_id = ? AND is_sold = 1', (product_id,))
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+
+def update_unsold_item_data(item_id, updates):
+    """Update the credential fields for an unsold item.  ``updates`` should
+    be a mapping of field names to new values (e.g. {'email': 'new',
+    'password': 'secret'}).  The function updates the JSON
+    ``item_data`` column as well as the top‑level email/password
+    columns.
+
+    Returns True if the item existed and was updated, otherwise
+    False.
+    """
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT item_data FROM unsold_items WHERE id = ?', (item_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False
+    item_data_json = row[0] or '{}'
+    try:
+        data_dict = json.loads(item_data_json) if item_data_json else {}
+    except Exception:
+        data_dict = {}
+    # Update fields
+    for key, value in updates.items():
+        data_dict[key] = value
+    # Ensure email/password in separate columns reflect updated values
+    email_value = data_dict.get('email', '')
+    password_value = data_dict.get('password', '')
+    cursor.execute(
+        'UPDATE unsold_items SET email = ?, password = ?, item_data = ? WHERE id = ?',
+        (email_value, password_value, json.dumps(data_dict), item_id)
+    )
+    conn.commit()
+    conn.close()
+    return True
 
 
 def create_withdrawal_request(user_id, amount, address):

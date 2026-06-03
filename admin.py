@@ -1,6 +1,7 @@
-import database
+import sqlite3
 import json
 import config
+import database
 import re
 
 
@@ -139,7 +140,10 @@ def add_bulk_products_admin(products_data):
 
 
 def add_stock_bulk_admin(stock_sections):
-    """Returns: (message, product_data_list_for_broadcast)"""
+    """Add stock items in bulk.  Returns a tuple of (message,
+    products_to_broadcast) where ``message`` is a human readable
+    summary and ``products_to_broadcast`` is a list of product data
+    dicts that should trigger a stock update broadcast."""
     try:
         total_added = 0
         report = "📦 *Stock Add Report:*\n\n"
@@ -163,12 +167,12 @@ def add_stock_bulk_admin(stock_sections):
                 current_stock = product[4]
                 new_total_stock = current_stock + added_count
                 database.set_product_stock(product_id, new_total_stock)
-                
+
                 # Get fresh product data for broadcast
                 updated_product = database.get_product(product_id)
                 new_stock = updated_product[4] if updated_product else new_total_stock
                 emoji_id = updated_product[9] if updated_product and len(updated_product) > 9 and updated_product[9] else ""
-                
+
                 products_to_broadcast.append({
                     'product_id': product_id,
                     'added_count': added_count,
@@ -176,18 +180,20 @@ def add_stock_bulk_admin(stock_sections):
                     'emoji_id': emoji_id,
                     'new_stock': new_stock
                 })
-                
+
                 report += f"✅ Product '{product[1]}' (ID: {product_id}): Added `{added_count}` items. New stock: {new_stock}\n"
                 total_added += added_count
             else:
                 report += f"⚠️ Product ID `{product_id}`: No valid items to add.\n"
 
         report += f"\n━━━━━━━━━━━━━━━━━━\nTotal Added: *{total_added}*"
-        
+
         return report, products_to_broadcast
 
     except Exception as e:
         return f"❌ Error adding stock: {e}", []
+
+
 def get_all_products_admin():
     products = database.get_all_products()
 
@@ -198,6 +204,7 @@ def get_all_products_admin():
 
     for p in products:
         stock_status = "✅ In Stock" if p[4] > 0 else "❌ OUT OF STOCK"
+        sold_count = database.get_sold_count(p[0])
 
         message += (
             f"🆔 ID: `{p[0]}`\n"
@@ -205,6 +212,7 @@ def get_all_products_admin():
             f"📅 Duration: {p[2]}\n"
             f"💰 Price: {p[3]} USDT\n"
             f"📦 Stock: {p[4]} — {stock_status}\n"
+            f"📦 Sold: {sold_count}\n"
             f"🧩 Sticker ID: `{p[9] if len(p) > 9 and p[9] else 'None'}`\n"
             f"━━━━━━━━━━━━━━━━━━\n"
         )
@@ -338,7 +346,8 @@ def approve_withdrawal_admin(withdrawal_id):
 
 
 def get_stats_admin():
-    conn = database.sqlite3.connect(database.DATABASE_NAME)
+    """Return aggregate statistics for the admin panel."""
+    conn = sqlite3.connect(database.DATABASE_NAME)
     cursor = conn.cursor()
 
     total_users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
@@ -378,3 +387,51 @@ def get_stats_admin():
         f"👛 Users Wallet Balance: {round(total_wallet, 2)} USDT\n"
         f"💸 Pending Withdrawals: {total_pending_withdrawals}\n"
     )
+
+
+# -------------------------------------------------------------------
+# New administrative helpers
+# -------------------------------------------------------------------
+
+ALLOWED_PRODUCT_FIELDS = {"name", "duration", "description", "note", "emoji_id"}
+
+
+def edit_product_details(product_id, field_name, new_value):
+    """Update a single textual attribute of a product.  Only a
+    whitelisted subset of columns may be changed (name, duration,
+    description, note, emoji_id).  Returns a human readable result
+    message.  Price and stock changes should use the dedicated
+    ``edit_product_price`` and ``edit_product_stock`` helpers."""
+    try:
+        field = field_name.strip().lower()
+        if field not in ALLOWED_PRODUCT_FIELDS:
+            allowed = ", ".join(sorted(ALLOWED_PRODUCT_FIELDS))
+            return f"❌ Invalid field `{field_name}`. Allowed fields: {allowed}."
+
+        product = database.get_product(product_id)
+        if not product:
+            return "❌ Product not found."
+
+        # Perform the update directly on the products table
+        conn = sqlite3.connect(database.DATABASE_NAME)
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE products SET {field} = ? WHERE id = ?", (new_value, product_id))
+        conn.commit()
+        conn.close()
+        return f"✅ Product ID {product_id} {field} updated successfully."
+    except Exception as e:
+        return f"❌ Error updating product: {e}"
+
+
+def edit_unsold_item_credentials(item_id, updates):
+    """Update the credential dictionary for a single unsold item.
+    ``updates`` is a mapping of field names to new values.  Keys not
+    present in the mapping will be left untouched.  Returns a
+    user‑friendly message."""
+    try:
+        success = database.update_unsold_item_data(item_id, updates)
+        if success:
+            return "✅ Item credentials updated successfully."
+        return "❌ Item not found."
+    except Exception as e:
+        return f"❌ Error updating item: {e}"
