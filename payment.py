@@ -1,3 +1,18 @@
+"""Payment helpers for the Telegram shop bot.
+
+This module provides functions to handle Binance Pay payments and wallet
+deposits.  It uses the Binance API to verify payment references
+against recent transaction history.  Successful payments result in
+wallet balance updates or order transactions as appropriate.
+
+This version lives inside the ``updated_bot`` package and imports
+configuration and database helpers from within the same package.  It
+mirrors the original payment logic from the bot but ensures that
+relative imports work correctly when the module is bundled with the
+updated bot code.  Only custom emojis are used in the formatted
+messages.
+"""
+
 import time
 import json
 import hmac
@@ -7,8 +22,8 @@ import urllib.request
 import urllib.error
 from html import escape as html_escape
 
-import config
-import database
+from . import config
+from . import database
 
 
 # Custom Emoji IDs for payment messages.  These are defined here to

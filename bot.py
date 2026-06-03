@@ -9,11 +9,13 @@ from telegram.ext import (
 )
 
 import config
-import database
-import products
-import payment
-import admin
-import utils
+# Import updated modules from the updated_bot package.  These provide
+# enhanced functionality such as sold counts, integrated purchase
+# history and new admin actions.  Importing from updated_bot ensures
+# that the correct versions are used even if similarly named modules
+# exist in the project root.
+from updated_bot import database, products, payment, admin, utils
+
 
 
 logging.basicConfig(
@@ -171,26 +173,29 @@ async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, 
 
 
 
-(
-    QUANTITY,
-    WITHDRAW_AMOUNT,
-    WITHDRAW_ADDRESS,
-    CONTACT_ADMIN,
-    BINANCE_ORDER_ID,
-    WALLET_DEPOSIT_REF,
-    WALLET_DEPOSIT_AMOUNT,
-    ORDER_DETAILS,
-    ADMIN_ORDER_DETAILS,
-    ADMIN_ADD_PRODUCT,
-    ADMIN_ADD_ITEMS,
-    ADMIN_EDIT_PRICE,
-    ADMIN_EDIT_STOCK,
-    ADMIN_ADD_BALANCE,
-    ADMIN_APPROVE_WITHDRAWAL,
-    ADMIN_BROADCAST,
-    ADMIN_DELETE_PRODUCT,
-    ADMIN_BULK_ADD_PRODUCTS,
-) = range(18)
+    (
+        QUANTITY,
+        WITHDRAW_AMOUNT,
+        WITHDRAW_ADDRESS,
+        CONTACT_ADMIN,
+        BINANCE_ORDER_ID,
+        WALLET_DEPOSIT_REF,
+        WALLET_DEPOSIT_AMOUNT,
+        ORDER_DETAILS,
+        ADMIN_ORDER_DETAILS,
+        ADMIN_ADD_PRODUCT,
+        ADMIN_ADD_ITEMS,
+        ADMIN_EDIT_PRICE,
+        ADMIN_EDIT_STOCK,
+        ADMIN_ADD_BALANCE,
+        ADMIN_APPROVE_WITHDRAWAL,
+        ADMIN_BROADCAST,
+        ADMIN_DELETE_PRODUCT,
+        ADMIN_BULK_ADD_PRODUCTS,
+        ADMIN_EDIT_DETAILS,
+        ADMIN_EDIT_CREDENTIALS,
+        ADMIN_SET_FREEBIE,
+    ) = range(21)
 
 
 # ══════════════════════════════════════════════════════════
@@ -206,10 +211,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             try:
                 referrer_id = int(context.args[0].split('_')[1])
                 if referrer_id != user.id:
-                    conn = database.sqlite3.connect(database.DATABASE_NAME)
+                    # Increment the referrer's referral count using the PostgreSQL connection
+                    conn = database.get_connection()
                     cursor = conn.cursor()
-                    cursor.execute("UPDATE users SET referrals = referrals + 1 WHERE id = ?", (referrer_id,))
+                    cursor.execute(
+                        "UPDATE users SET referrals = referrals + %s WHERE id = %s",
+                        (1, referrer_id)
+                    )
                     conn.commit()
+                    cursor.close()
                     conn.close()
             except (IndexError, ValueError):
                 pass
@@ -230,7 +240,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message:
         await update.message.reply_text(welcome_text, reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
     elif update.callback_query:
-        await update.callback_query.edit_message_text(welcome_text, reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
+        # Always send a new welcome message rather than editing the
+        # existing one.  This prevents the original message from
+        # disappearing and satisfies the requirement that each button
+        # click produces a new chat message.
+        await context.bot.send_message(
+            chat_id=update.callback_query.message.chat_id,
+            text=welcome_text,
+            reply_markup=utils.main_menu_keyboard(),
+            parse_mode='HTML'
+        )
 
 
 # ══════════════════════════════════════════════════════════
@@ -334,9 +353,10 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif text == "📜 Purchase History":
         await show_purchase_history(update, context)
 
-    elif text == "🔎 Order Details":
-        await update.message.reply_text(f"{ce('order_details')} <b>Order Details</b>\n\nPlease send your Order ID:", parse_mode='HTML')
-        context.user_data['waiting_for_order_details'] = True
+
+    # The standalone "Order Details" text option has been removed from the
+    # user menu.  Order details can now be accessed directly through
+    # the purchase history which displays credentials for each order.
 
     elif text == "💰 Wallet":
         user = database.get_user(user_id)
@@ -398,7 +418,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         product_id = int(data.split('_')[1])
         context.user_data['current_product_id'] = product_id
         details_msg = products.get_product_details_message(product_id)
-        await query.edit_message_text(details_msg, reply_markup=utils.product_details_keyboard(), parse_mode='HTML')
+        # Fetch the product so that the keyboard can include the
+        # "Claim Free" option when appropriate.  ``get_product``
+        # returns a dict (RealDictRow) where keys can be accessed with
+        # ``get``.  Pass the product directly to the keyboard
+        # builder.
+        product = database.get_product(product_id)
+        await query.edit_message_text(
+            details_msg,
+            reply_markup=utils.product_details_keyboard(product),
+            parse_mode='HTML'
+        )
         return ConversationHandler.END
 
     elif data == 'order_now':
@@ -424,7 +454,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif data == 'back_to_product_details':
         product_id = context.user_data.get('current_product_id')
         if product_id:
-            await query.edit_message_text(products.get_product_details_message(product_id), reply_markup=utils.product_details_keyboard(), parse_mode='HTML')
+            product = database.get_product(product_id)
+            await query.edit_message_text(
+                products.get_product_details_message(product_id),
+                reply_markup=utils.product_details_keyboard(product),
+                parse_mode='HTML'
+            )
         else:
             await start(update, context)
         return ConversationHandler.END
@@ -442,6 +477,93 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         await query.edit_message_text(text, reply_markup=utils.quantity_selection_keyboard(), parse_mode='Markdown')
         return QUANTITY
+
+    elif data == 'claim_free':
+        # User wants to claim a freebie.  Verify that the current
+        # product is marked as free and that the user has joined the
+        # specified channel before delivering the credentials.
+        product_id = context.user_data.get('current_product_id')
+        if not product_id:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="❌ No product selected.",
+                reply_markup=utils.main_menu_keyboard(),
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+        product = database.get_product(product_id)
+        # ``product`` may be a dict (RealDictRow) or tuple.  Check the
+        # is_free flag accordingly.
+        is_free = False
+        free_channel = None
+        if product:
+            if isinstance(product, dict):
+                is_free = product.get('is_free')
+                free_channel = product.get('free_channel')
+            else:
+                # Index 10 (is_free) and 11 (free_channel) if present
+                try:
+                    # product layout: id,name,duration,price,stock,rating,description,features,note,emoji_id,is_free,free_channel
+                    is_free = product[10] if len(product) > 10 else False
+                    free_channel = product[11] if len(product) > 11 else None
+                except Exception:
+                    is_free = False
+                    free_channel = None
+        if not product or not is_free:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="❌ This product is not available for free.",
+                reply_markup=utils.main_menu_keyboard(),
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+        if not free_channel:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="⚠️ Freebie channel is not configured. Please contact the admin.",
+                reply_markup=utils.main_menu_keyboard(),
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+        channel_username = str(free_channel).lstrip('@')
+        # Check if the user has joined the channel.  Use a try/except
+        # because get_chat_member will raise if the chat cannot be
+        # resolved or the user is not a member.
+        try:
+            member = await context.bot.get_chat_member(chat_id=f"@{channel_username}", user_id=user_id)
+            status = getattr(member, 'status', None)
+            if status not in ('creator', 'administrator', 'member'):
+                raise Exception('Not joined')
+        except Exception:
+            join_link = f"https://t.me/{channel_username}"
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Join Channel", url=join_link)],
+                [InlineKeyboardButton("I've Joined", callback_data='claim_free')],
+            ])
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=(
+                    f"🎁 <b>Join our channel to claim this freebie!</b>\n\n"
+                    f"You must be a member of @{channel_username} to access free products.\n"
+                    "Tap the button below to join, then click 'I've Joined' once you have joined."
+                ),
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+        # User has joined; deliver one item for free
+        context.user_data['quantity'] = 1
+        context.user_data['total_amount'] = 0
+        # Ensure current_product_id remains set
+        context.user_data['current_product_id'] = product_id
+        await deliver_product(update, context, 'Free')
+        # Prompt the user to start again
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="✅ Use /start to go back to the main menu.",
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
 
     elif data == 'pay_binance':
         total_amount = context.user_data.get('total_amount')
@@ -921,10 +1043,15 @@ async def deliver_product(update: Update, context: ContextTypes.DEFAULT_TYPE, pa
 
     database.update_product_stock(product_id, -quantity)
 
-    conn = database.sqlite3.connect(database.DATABASE_NAME)
+    # Update the user's total_orders count using PostgreSQL
+    conn = database.get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET total_orders = total_orders + 1 WHERE id = ?", (user_id,))
+    cursor.execute(
+        "UPDATE users SET total_orders = total_orders + %s WHERE id = %s",
+        (1, user_id)
+    )
     conn.commit()
+    cursor.close()
     conn.close()
 
     database.create_order(order_id, user_id, product_id, quantity, total_amount, payment_method, "Confirmed", delivery_details)
@@ -959,10 +1086,31 @@ async def deliver_product(update: Update, context: ContextTypes.DEFAULT_TYPE, pa
         "• Use on 1 device only"
     )
 
+    # Send the order confirmation and credentials as a new message rather than
+    # editing the previous one.  Do not include any back buttons or
+    # order detail buttons here; instead, instruct the user to start
+    # over using /start after delivery.
     if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=utils.order_confirmed_keyboard(), parse_mode='Markdown')
+        await context.bot.send_message(
+            chat_id=update.callback_query.message.chat_id,
+            text=text,
+            parse_mode='Markdown'
+        )
     else:
-        await update.message.reply_text(text, reply_markup=utils.order_confirmed_keyboard(), parse_mode='Markdown')
+        await update.message.reply_text(
+            text,
+            parse_mode='Markdown'
+        )
+    # Prompt the user to return to the main menu
+    try:
+        chat_id = update.callback_query.message.chat_id if update.callback_query else update.message.chat_id
+    except Exception:
+        chat_id = update.effective_chat.id
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="✅ Use /start to return to the main menu.",
+        parse_mode='Markdown'
+    )
 
 
 # ══════════════════════════════════════════════════════════
@@ -1059,6 +1207,52 @@ async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data == 'admin_delete_product':
         await query.edit_message_text("🗑️ *Delete Product*\n\nSend product ID:", reply_markup=utils.admin_cancel_keyboard(), parse_mode='Markdown')
         return ADMIN_DELETE_PRODUCT
+
+    elif data == 'admin_edit_details':
+        # Prompt the admin for product detail edits.  Specify the format and
+        # allowed fields.  The admin must provide the product ID, the
+        # field name to update and the new value.  Example:
+        #   "1 name Netflix Premium Plus"
+        await query.edit_message_text(
+            "✏️ *Edit Product Details*\n\n"
+            "Format: `product_id field_name new_value`\n"
+            "Allowed fields: name, duration, description, note, emoji_id\n\n"
+            "Example: `1 name Netflix Premium Plus`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_EDIT_DETAILS
+
+    elif data == 'admin_edit_credentials':
+        # Prompt the admin to edit credentials of a single unsold stock item.
+        # The admin must provide the item ID followed by key:value pairs
+        # separated by spaces.  Example:
+        #   "123 email:new@example.com password:newpass"
+        await query.edit_message_text(
+            "🔑 *Edit Stock Item Credentials*\n\n"
+            "Format: `item_id key1:value1 key2:value2`\n\n"
+            "Example: `123 email:new@example.com password:newpass`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_EDIT_CREDENTIALS
+
+    elif data == 'admin_set_freebie':
+        # Prompt the admin to manage freebies.  Admin should send
+        # "product_id channel" to mark a product as free or
+        # "product_id none" to remove the free status.  Channel
+        # usernames should be provided without '@'.  Example:
+        #   "1 mychannel" to set product 1 free for members of @mychannel
+        #   "1 none" to unset the freebie.
+        await query.edit_message_text(
+            "🎁 *Freebie Management*\n\n"
+            "Send `product_id channel` to mark a product as free.\n"
+            "Send `product_id none` to remove the free status.\n\n"
+            "Example: `2 mychannel` or `2 none`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_SET_FREEBIE
 
     return ConversationHandler.END
 
@@ -1217,16 +1411,32 @@ async def handle_admin_approve_withdrawal(update: Update, context: ContextTypes.
 async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not admin.is_admin(update.effective_user.id):
         return ConversationHandler.END
+    # Allow admins to broadcast messages with custom emoji IDs and
+    # formatting.  Replace [emoji_id] patterns with the proper
+    # <tg-emoji> tags and send using HTML parse mode.  This lets
+    # admins include custom Telegram Premium formatting or emojis in
+    # their message.  See products.format_with_custom_emojis() for
+    # details.
     msg_text = update.message.text
+    # Convert bracketed custom emoji IDs to <tg-emoji> tags
+    html_text = products.format_with_custom_emojis(msg_text)
     users = database.get_all_users()
     sent = 0
     for user in users:
         try:
-            await context.bot.send_message(chat_id=user[0], text=msg_text)
+            await context.bot.send_message(
+                chat_id=user[0],
+                text=html_text,
+                parse_mode='HTML'
+            )
             sent += 1
         except Exception:
             pass
-    await update.message.reply_text(f"✅ Broadcast sent to {sent}/{len(users)} users.", reply_markup=utils.admin_main_keyboard())
+    await update.message.reply_text(
+        f"✅ Broadcast sent to {sent}/{len(users)} users.",
+        reply_markup=utils.admin_main_keyboard(),
+        parse_mode='Markdown'
+    )
     return ConversationHandler.END
 
 
@@ -1239,6 +1449,190 @@ async def handle_admin_delete_product(update: Update, context: ContextTypes.DEFA
         await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}", reply_markup=utils.admin_main_keyboard())
+    return ConversationHandler.END
+
+
+# -------------------------------------------------------------------
+# New admin handlers for editing product details and item credentials
+# -------------------------------------------------------------------
+
+async def handle_admin_edit_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle admin input for editing a product's textual details.
+
+    The expected format is: ``product_id field_name new_value``.
+    The new value may contain spaces.  Allowed fields are name,
+    duration, description, note, and emoji_id.  See ``admin.edit_product_details``
+    for validation.
+    """
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+    try:
+        parts = update.message.text.split()
+        if len(parts) < 3:
+            await update.message.reply_text(
+                "❌ Invalid format. Use: `product_id field_name new_value`",
+                reply_markup=utils.admin_main_keyboard(),
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        product_id = int(parts[0])
+        field_name = parts[1]
+        new_value = " ".join(parts[2:])
+        msg = admin.edit_product_details(product_id, field_name, new_value)
+        await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}", reply_markup=utils.admin_main_keyboard())
+    return ConversationHandler.END
+
+
+async def handle_admin_edit_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle admin input for editing the credential fields of an unsold item.
+
+    The expected format is: ``item_id key1:value1 key2:value2 ...``.
+    Each key/value pair must be separated by spaces and use a colon.
+    Keys and values may not contain spaces.  See ``admin.edit_unsold_item_credentials``
+    for update logic.
+    """
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+    try:
+        parts = update.message.text.split()
+        if len(parts) < 2:
+            await update.message.reply_text(
+                "❌ Invalid format. Use: `item_id key:value ...`",
+                reply_markup=utils.admin_main_keyboard(),
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        item_id = int(parts[0])
+        updates = {}
+        for part in parts[1:]:
+            if ':' not in part:
+                await update.message.reply_text(
+                    f"❌ Invalid field format: `{part}`. Use key:value pairs.",
+                    reply_markup=utils.admin_main_keyboard(),
+                    parse_mode='Markdown'
+                )
+                return ConversationHandler.END
+            key, value = part.split(':', 1)
+            updates[key.strip()] = value.strip()
+        msg = admin.edit_unsold_item_credentials(item_id, updates)
+        await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}", reply_markup=utils.admin_main_keyboard())
+    return ConversationHandler.END
+
+
+async def handle_admin_set_freebie(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle admin input for marking or unmarking a product as a freebie.
+
+    The admin should send a message in the format ``product_id channel`` to
+    mark the product as free for members of the specified channel or
+    ``product_id none`` to remove the free status.  Channel names
+    should not include the leading ``@``.  Responds with a success or
+    error message and returns to the admin main menu.
+    """
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+    text = (update.message.text or '').strip()
+    parts = text.split()
+    if len(parts) != 2:
+        await update.message.reply_text(
+            "❌ Invalid format.  Use `product_id channel` or `product_id none`.",
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+    try:
+        product_id = int(parts[0])
+    except Exception:
+        await update.message.reply_text(
+            "❌ First part must be a valid product ID.",
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+    channel = parts[1]
+    # Remove leading '@' if provided
+    channel = channel.lstrip('@')
+    if channel.lower() == 'none':
+        msg = admin.unset_freebie(product_id)
+    else:
+        msg = admin.set_freebie(product_id, channel)
+    await update.message.reply_text(
+        msg,
+        reply_markup=utils.admin_main_keyboard(),
+        parse_mode='Markdown'
+    )
+    return ConversationHandler.END
+
+
+async def handle_admin_set_freebie(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle admin input for managing freebies.
+
+    The expected formats are:
+      - ``<product_id> <channel_username>`` to mark a product as free and require users to join the specified channel.  The channel username
+        may optionally start with ``@``; it will be stripped automatically.
+      - ``off <product_id>`` to disable the free status for the given product.
+
+    Any errors or invalid formats result in a usage message being sent.  After
+    processing, the handler returns to the admin panel.
+    """
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+    text = (update.message.text or "").strip()
+    if not text:
+        await update.message.reply_text(
+            "❌ Invalid format. Use: `<product_id> <channel_username>` or `off <product_id>`",
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+    parts = text.split()
+    # Remove leading '@' from channel if present
+    def clean_channel(ch):
+        return ch.lstrip('@')
+    if parts[0].lower() == 'off':
+        # Off command to disable freebies
+        if len(parts) < 2:
+            await update.message.reply_text(
+                "❌ Usage: off <product_id>",
+                reply_markup=utils.admin_main_keyboard(),
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        try:
+            product_id = int(parts[1])
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Product ID must be a number.",
+                reply_markup=utils.admin_main_keyboard(),
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        msg = admin.unset_freebie(product_id)
+        await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
+        return ConversationHandler.END
+    # Otherwise expect product_id and channel username
+    if len(parts) < 2:
+        await update.message.reply_text(
+            "❌ Invalid format. Use: `<product_id> <channel_username>`",
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+    try:
+        product_id = int(parts[0])
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Product ID must be a number.",
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+    channel = clean_channel(parts[1])
+    msg = admin.set_freebie(product_id, channel)
+    await update.message.reply_text(msg, reply_markup=utils.admin_main_keyboard(), parse_mode='Markdown')
     return ConversationHandler.END
 
 
@@ -1362,9 +1756,12 @@ def main() -> None:
     application.add_handler(CommandHandler("addbalance", cmd_addbalance))
     application.add_handler(CommandHandler("approve", cmd_approve))
 
+    # Define a reply filter that matches only the visible menu buttons.  The
+    # "Order Details" option has been removed from the main menu, so it
+    # is intentionally omitted here.
     reply_filter = (
         filters.TEXT & ~filters.COMMAND &
-        filters.Regex(r'^(🛍️ Products|👤 Profile|📜 Purchase History|🔎 Order Details|💰 Wallet|🆘 Support)$')
+        filters.Regex(r'^(🛍️ Products|👤 Profile|📜 Purchase History|💰 Wallet|🆘 Support)$')
     )
     application.add_handler(MessageHandler(reply_filter, reply_keyboard_handler))
 
@@ -1392,6 +1789,9 @@ def main() -> None:
             ADMIN_APPROVE_WITHDRAWAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_approve_withdrawal)],
             ADMIN_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_broadcast)],
             ADMIN_DELETE_PRODUCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_delete_product)],
+            ADMIN_EDIT_DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_edit_details)],
+            ADMIN_EDIT_CREDENTIALS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_edit_credentials)],
+            ADMIN_SET_FREEBIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_set_freebie)],
         },
         fallbacks=[
             CommandHandler('cancel', cancel),

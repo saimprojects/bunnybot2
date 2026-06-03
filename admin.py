@@ -1,4 +1,3 @@
-import sqlite3
 import json
 import config
 import database
@@ -347,33 +346,37 @@ def approve_withdrawal_admin(withdrawal_id):
 
 def get_stats_admin():
     """Return aggregate statistics for the admin panel."""
-    conn = sqlite3.connect(database.DATABASE_NAME)
+    # Use the PostgreSQL connection from the database module.  Note
+    # that ``is_sold`` is stored as a boolean in the new schema, so
+    # comparisons use TRUE/FALSE rather than 1/0.
+    conn = database.get_connection()
     cursor = conn.cursor()
 
-    total_users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    total_products = cursor.execute("SELECT COUNT(*) FROM products").fetchone()[0]
-    total_orders = cursor.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
 
-    total_revenue = cursor.execute(
-        "SELECT SUM(total_amount) FROM orders WHERE status = 'Confirmed'"
-    ).fetchone()[0] or 0
+    cursor.execute("SELECT COUNT(*) FROM products")
+    total_products = cursor.fetchone()[0]
 
-    total_wallet = cursor.execute(
-        "SELECT SUM(wallet_balance) FROM users"
-    ).fetchone()[0] or 0
+    cursor.execute("SELECT COUNT(*) FROM orders")
+    total_orders = cursor.fetchone()[0]
 
-    total_pending_withdrawals = cursor.execute(
-        "SELECT COUNT(*) FROM withdrawals WHERE status = 'Pending'"
-    ).fetchone()[0]
+    cursor.execute("SELECT SUM(total_amount) FROM orders WHERE status = 'Confirmed'")
+    total_revenue = cursor.fetchone()[0] or 0
 
-    total_stock = cursor.execute(
-        "SELECT SUM(stock) FROM products"
-    ).fetchone()[0] or 0
+    cursor.execute("SELECT SUM(wallet_balance) FROM users")
+    total_wallet = cursor.fetchone()[0] or 0
 
-    total_unsold_items = cursor.execute(
-        "SELECT COUNT(*) FROM unsold_items WHERE is_sold = 0"
-    ).fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM withdrawals WHERE status = 'Pending'")
+    total_pending_withdrawals = cursor.fetchone()[0]
 
+    cursor.execute("SELECT SUM(stock) FROM products")
+    total_stock = cursor.fetchone()[0] or 0
+
+    cursor.execute("SELECT COUNT(*) FROM unsold_items WHERE is_sold = FALSE")
+    total_unsold_items = cursor.fetchone()[0]
+
+    cursor.close()
     conn.close()
 
     return (
@@ -412,11 +415,14 @@ def edit_product_details(product_id, field_name, new_value):
         if not product:
             return "❌ Product not found."
 
-        # Perform the update directly on the products table
-        conn = sqlite3.connect(database.DATABASE_NAME)
+        # Perform the update directly on the products table using the
+        # PostgreSQL connection.  Use parameterised queries to avoid
+        # SQL injection.  The ``field`` variable has been validated above.
+        conn = database.get_connection()
         cursor = conn.cursor()
-        cursor.execute(f"UPDATE products SET {field} = ? WHERE id = ?", (new_value, product_id))
+        cursor.execute(f"UPDATE products SET {field} = %s WHERE id = %s", (new_value, product_id))
         conn.commit()
+        cursor.close()
         conn.close()
         return f"✅ Product ID {product_id} {field} updated successfully."
     except Exception as e:
@@ -435,3 +441,43 @@ def edit_unsold_item_credentials(item_id, updates):
         return "❌ Item not found."
     except Exception as e:
         return f"❌ Error updating item: {e}"
+
+
+# -------------------------------------------------------------------
+# Freebie management helpers
+# -------------------------------------------------------------------
+
+def set_freebie(product_id, channel_username):
+    """Mark a product as free and associate it with a Telegram channel.
+
+    Returns a user friendly message.  The ``channel_username`` should be
+    provided without the leading '@'.  If the product does not exist
+    the function returns an error message.
+    """
+    try:
+        product = database.get_product(product_id)
+        if not product:
+            return "❌ Product not found."
+        ok = database.set_product_free(product_id, channel_username)
+        if not ok:
+            return "❌ Product not found."
+        return f"✅ Product `{product_id}` marked as free. Users must join @{channel_username} to claim."
+    except Exception as e:
+        return f"❌ Error setting freebie: {e}"
+
+
+def unset_freebie(product_id):
+    """Remove the free status from a product.
+
+    Returns a user friendly message.
+    """
+    try:
+        product = database.get_product(product_id)
+        if not product:
+            return "❌ Product not found."
+        ok = database.unset_product_free(product_id)
+        if not ok:
+            return "❌ Product not found."
+        return f"✅ Freebie removed for product `{product_id}`."
+    except Exception as e:
+        return f"❌ Error removing freebie: {e}"

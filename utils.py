@@ -1,3 +1,18 @@
+"""
+Utility functions for building Telegram inline keyboards and order
+identifiers.
+
+The keyboard helpers centralize how buttons are laid out and ensure
+that custom emojis are consistently applied.  If you add new
+administrative actions, define the button here and assign an
+appropriate callback data.
+
+This version removes the standalone "Order Details" option from the
+user main menu (users can now view order details directly within the
+purchase history) and introduces new admin actions for editing
+product details and item credentials.
+"""
+
 import uuid
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -33,6 +48,9 @@ EMOJIS = {
     # Additional icons for new admin actions reuse existing IDs
     "edit_details": "5451882707875276247",  # reuse edit_stock icon
     "edit_credentials": "5451882707875276247",  # reuse edit_stock icon
+
+    # Freebies: use the gift icon for both user and admin buttons
+    "freebie": "5217822164362739968",
 }
 
 
@@ -98,11 +116,22 @@ def products_list_keyboard(products):
     return build_menu(buttons, n_cols=1)
 
 
-def product_details_keyboard():
-    buttons = [
-        btn("Order Now", callback_data='order_now', style="success", emoji_id=EMOJIS["order"]),
-        back_btn("Back to Products", callback_data='products', style="danger"),
-    ]
+def product_details_keyboard(product=None):
+    """Build the product details keyboard.
+
+    If ``product`` is provided and it has the ``is_free`` flag set,
+    include a "Claim Free" button that lets users obtain the item for
+    free (pending membership verification).  Otherwise show the
+    standard "Order Now" button.  Always include a Back button.
+    """
+    buttons = []
+    # When product is free, show claim button; otherwise show order button
+    if product and product.get("is_free"):
+        buttons.append(btn("Claim Free", callback_data='claim_free', style="success", emoji_id=EMOJIS["freebie"]))
+    else:
+        buttons.append(btn("Order Now", callback_data='order_now', style="success", emoji_id=EMOJIS["order"]))
+    # Back button is always present
+    buttons.append(back_btn("Back to Products", callback_data='products', style="danger"))
     return build_menu(buttons, n_cols=1)
 
 
@@ -230,6 +259,8 @@ def admin_main_keyboard():
         btn("All Orders", callback_data='admin_view_all_orders', style="primary", emoji_id=EMOJIS["order"]),
         btn("Withdrawals", callback_data='admin_withdraw_requests', style="danger", emoji_id=EMOJIS["withdraw"]),
         btn("Stats", callback_data='admin_view_stats', style="success", emoji_id=EMOJIS["stats"]),
+        # Manage freebies: allows the admin to mark products as free or remove free status
+        btn("Freebies", callback_data='admin_set_freebie', style="primary", emoji_id=EMOJIS["freebie"]),
     ]
     return build_menu(buttons, n_cols=2)
 
