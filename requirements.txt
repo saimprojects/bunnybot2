@@ -4,7 +4,7 @@ h11
 httpcore
 httpx
 idna
-python-telegram-bot
+python-telegram-bot==21.10
 socksio
 psycopg2-binary
 requests
