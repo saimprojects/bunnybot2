@@ -5,6 +5,8 @@ import json
 import config
 
 def get_connection():
+    if config.DATABASE_URL:
+        return psycopg2.connect(config.DATABASE_URL)
     return psycopg2.connect(
         host=config.DB_HOST,
         database=config.DB_NAME,
