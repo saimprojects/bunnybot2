@@ -43,7 +43,10 @@ logger = logging.getLogger(__name__)
 ) = range(15)
 
 def ce(name: str) -> str:
-    emoji_id, fallback = utils.EMOJIS.get(name, ("", ""))
+    emoji_data = utils.EMOJIS.get(name)
+    if not emoji_data:
+        return ""
+    emoji_id, fallback = emoji_data
     if not emoji_id:
         return fallback
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'

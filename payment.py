@@ -9,17 +9,18 @@ import string
 import urllib.request
 import urllib.error
 from html import escape as html_escape
-
-
-EMOJIS = {
-    "cancel": "5210952531676504517",
-    "confirm": "5206607081334906820",
-    "binance": "6222208096257712941",
-}
+import utils
 
 
 def tg(emoji_id, fallback):
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+def ce(name):
+    emoji_data = utils.EMOJIS.get(name)
+    if not emoji_data: return ""
+    eid, fb = emoji_data
+    return tg(eid, fb) if eid else fb
 
 
 def safe(value):
@@ -117,10 +118,10 @@ def process_binance_payment(user_id, order_id, product_id, quantity, total_amoun
 
     if success:
         database.add_transaction(user_id, "Binance Purchase", -float(total_amount))
-        return True, f"{tg(EMOJIS['confirm'], '✅')} Payment verified successfully."
+        return True, f"{ce('confirm')} Payment verified successfully."
 
     return False, (
-        f"{tg(EMOJIS['cancel'], '❌')} <b>Payment not verified.</b>\n\n"
+        f"{ce('cancel')} <b>Payment not verified.</b>\n\n"
         f"Reason: {safe(msg)}\n\n"
         f"Please check your Binance Order ID or contact support."
     )
@@ -140,7 +141,7 @@ def process_wallet_payment(user_id, order_id, product_id, quantity, total_amount
 
     required = round(total_amount - current_balance, 4)
     return False, (
-        f"{tg(EMOJIS['cancel'], '❌')} <b>Insufficient Balance</b>\n\n"
+        f"{ce('cancel')} <b>Insufficient Balance</b>\n\n"
         f"Your Balance: {safe(current_balance)} USDT\n"
         f"Required: {safe(total_amount)} USDT\n"
         f"Short by: {safe(required)} USDT"
@@ -151,9 +152,9 @@ def get_binance_payment_details(total_amount):
     binance_id = get_binance_account_id()
 
     return (
-        f"{tg(EMOJIS['binance'], '💳')} <b>Binance Payment</b>\n\n"
+        f"{ce('diamond')} <b>Binance Payment</b>\n\n"
         f"Send exactly: <b>{safe(total_amount)} USDT</b>\n\n"
-        f"{tg(EMOJIS['binance'], '💳')} <b>Binance ID:</b>\n"
+        f"{ce('diamond')} <b>Binance ID:</b>\n"
         f"<code>{safe(binance_id)}</code>\n\n"
         f"After sending payment, click the button below.\n"
         f"Then send your <b>Binance Order ID / Transaction ID</b> for verification.\n\n"
@@ -168,9 +169,9 @@ def get_wallet_payment_summary(user_id, total_amount):
 
     current_balance = user[3]
     status = (
-        f"{tg(EMOJIS['confirm'], '✅')} Sufficient"
+        f"{ce('confirm')} Sufficient"
         if current_balance >= total_amount
-        else f"{tg(EMOJIS['cancel'], '❌')} Insufficient"
+        else f"{ce('cancel')} Insufficient"
     )
 
     return (
@@ -180,4 +181,3 @@ def get_wallet_payment_summary(user_id, total_amount):
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"Balance Status: <b>{status}</b>"
     )
-

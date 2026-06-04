@@ -1,21 +1,17 @@
 import database
 from html import escape as html_escape
+import utils
 
 
 def tg(emoji_id, fallback):
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 
-# Custom emoji IDs
-EMOJIS = {
-    "product": "5231012545799666522",      # 📦
-    "wallet": "5409048419211682843",       # 💰
-    "date": "5413879192267805083",         # 📅
-    "sticker": "5406745015365943482",      # 🧩
-    "confirm": "5206607081334906820",      # ✅
-    "warning": "5210952531676504517",      # ⚠️ / ❌ style
-    "description": "5282843764451195532",  # 📖
-}
+def ce(name):
+    emoji_data = utils.EMOJIS.get(name)
+    if not emoji_data: return ""
+    eid, fb = emoji_data
+    return tg(eid, fb) if eid else fb
 
 
 def safe(value):
@@ -30,7 +26,7 @@ def get_product_icon(emoji_id):
     if emoji_id and str(emoji_id).strip() and str(emoji_id).strip().lower() != "none":
         return tg(str(emoji_id).strip(), "📦")
 
-    return tg(EMOJIS["product"], "📦")
+    return ce('box')
 
 
 def get_product_details_message(product_id):
@@ -59,11 +55,11 @@ def get_product_details_message(product_id):
         f"{product_icon} <b>Product Details</b>\n\n"
 
         f"{product_icon} <b>Name:</b> {safe(name)}\n"
-        f"{tg(EMOJIS['date'], '📅')} <b>Duration:</b> {safe(duration)}\n"
-        f"{tg(EMOJIS['wallet'], '💰')} <b>Price:</b> {safe(price)} USDT\n"
-        f"{tg(EMOJIS['product'], '📦')} <b>Stock Available:</b> {safe(stock)}\n\n"
+        f"{ce('date')} <b>Duration:</b> {safe(duration)}\n"
+        f"{ce('wallet')} <b>Price:</b> {safe(price)} USDT\n"
+        f"{ce('box')} <b>Stock Available:</b> {safe(stock)}\n\n"
 
-        f"{tg(EMOJIS['description'], '📖')} <b>Description:</b>\n"
+        f"{ce('faq')} <b>Description:</b>\n"
         f"{safe(description)}\n\n"
 
         f"⚠️ <b>Note:</b>\n"
@@ -73,4 +69,3 @@ def get_product_details_message(product_id):
     )
 
     return message
-

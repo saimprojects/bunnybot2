@@ -426,3 +426,13 @@ def has_user_received_freebie(user_id, product_id):
     count = cursor.fetchone()[0]
     conn.close()
     return count > 0
+
+def add_referral(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE users SET referrals = referrals + 1 WHERE id = %s',
+        (user_id,)
+    )
+    conn.commit()
+    conn.close()
