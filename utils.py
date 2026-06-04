@@ -52,13 +52,20 @@ def generate_order_id() -> str:
 
 
 def btn(text: str, callback_data: str = None, url: str = None, emoji_id: str = None) -> InlineKeyboardButton:
-    """Create a Telegram inline button with an optional custom emoji."""
-    api_kwargs = {}
-    if emoji_id:
-        api_kwargs["icon_custom_emoji_id"] = str(emoji_id)
+    """Create a Telegram inline button.
+
+    Important:
+    python-telegram-bot's InlineKeyboardButton does NOT support
+    ``icon_custom_emoji_id``. Passing that argument crashes the bot with:
+    ``TypeError: InlineKeyboardButton.__init__() got an unexpected keyword argument 'icon_custom_emoji_id'``.
+
+    So ``emoji_id`` is accepted only for compatibility with the rest of the
+    code, but it is intentionally not passed to Telegram. Custom emojis should
+    be used inside message text via <tg-emoji> tags, not inside inline buttons.
+    """
     if url:
-        return InlineKeyboardButton(text=text, url=url, **api_kwargs)
-    return InlineKeyboardButton(text=text, callback_data=callback_data, **api_kwargs)
+        return InlineKeyboardButton(text=text, url=url)
+    return InlineKeyboardButton(text=text, callback_data=callback_data)
 
 
 def back_btn(text: str = "Back", callback_data: str = "main_menu") -> InlineKeyboardButton:
