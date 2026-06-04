@@ -5,8 +5,15 @@ import json
 import config
 
 def get_connection():
+    # If DATABASE_URL is provided, use it directly
     if config.DATABASE_URL:
-        return psycopg2.connect(config.DATABASE_URL)
+        try:
+            return psycopg2.connect(config.DATABASE_URL)
+        except Exception as e:
+            print(f"Error connecting using DATABASE_URL: {e}")
+            # If DATABASE_URL fails, fall back to individual components
+    
+    # Fallback to individual components
     return psycopg2.connect(
         host=config.DB_HOST,
         database=config.DB_NAME,
