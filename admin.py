@@ -319,32 +319,32 @@ def approve_withdrawal_admin(withdrawal_id):
 
 
 def get_stats_admin():
-    conn = database.sqlite3.connect(database.DATABASE_NAME)
+    conn = database.get_connection()
     cursor = conn.cursor()
 
-    total_users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    total_products = cursor.execute("SELECT COUNT(*) FROM products").fetchone()[0]
-    total_orders = cursor.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM products")
+    total_products = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM orders")
+    total_orders = cursor.fetchone()[0]
 
-    total_revenue = cursor.execute(
-        "SELECT SUM(total_amount) FROM orders WHERE status = 'Confirmed'"
-    ).fetchone()[0] or 0
+    cursor.execute("SELECT SUM(total_amount) FROM orders WHERE status = 'Confirmed'")
+    total_revenue = cursor.fetchone()[0] or 0
 
-    total_wallet = cursor.execute(
-        "SELECT SUM(wallet_balance) FROM users"
-    ).fetchone()[0] or 0
+    cursor.execute("SELECT SUM(wallet_balance) FROM users")
+    total_wallet = cursor.fetchone()[0] or 0
 
-    total_pending_withdrawals = cursor.execute(
-        "SELECT COUNT(*) FROM withdrawals WHERE status = 'Pending'"
-    ).fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM withdrawals WHERE status = 'Pending'")
+    total_pending_withdrawals = cursor.fetchone()[0]
 
-    total_stock = cursor.execute(
-        "SELECT SUM(stock) FROM products"
-    ).fetchone()[0] or 0
+    cursor.execute("SELECT SUM(stock) FROM products")
+    total_stock = cursor.fetchone()[0] or 0
 
-    total_unsold_items = cursor.execute(
-        "SELECT COUNT(*) FROM unsold_items WHERE is_sold = 0"
-    ).fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM unsold_items WHERE is_sold = 0")
+    total_unsold_items = cursor.fetchone()[0]
 
     conn.close()
 
@@ -359,3 +359,29 @@ def get_stats_admin():
         f"👛 Users Wallet Balance: {round(total_wallet, 2)} USDT\n"
         f"💸 Pending Withdrawals: {total_pending_withdrawals}\n"
     )
+
+def get_freebies_settings_admin():
+    config_data = database.get_freebies_config()
+    status = "Enabled ✅" if config_data[3] else "Disabled ❌"
+    
+    return (
+        f"🎁 *Freebies Settings*\n\n"
+        f"Status: {status}\n"
+        f"Channel ID: `{config_data[1]}`\n"
+        f"Channel Link: {config_data[2]}\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"To update, send:\n"
+        f"`freebie_setup | channel_id | channel_link | enable/disable`"
+    )
+
+def get_freebie_products_admin():
+    products = database.get_freebie_products()
+    if not products:
+        return "No products are currently set as Freebies."
+        
+    message = "🎁 *Freebie Products:*\n\n"
+    for p in products:
+        message += f"🆔 ID: `{p[0]}` | 📦 Name: *{p[1]}*\n"
+    
+    message += "\nTo toggle a product as freebie, send:\n`toggle_freebie | product_id`"
+    return message

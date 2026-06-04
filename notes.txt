@@ -1,0 +1,3261 @@
+Admin.py
+
+----------------
+
+import database
+import json
+import config
+import re
+
+
+def is_admin(user_id):
+    try:
+        return int(user_id) == int(config.ADMIN_ID)
+    except Exception:
+        return False
+
+
+def _extract_product_stock_sections(text):
+    pattern = r'(\d+)\s*\[(.*?)\]'
+    matches = re.findall(pattern, text, flags=re.DOTALL)
+
+    if not matches:
+        raise ValueError("Invalid stock format. Use: product_id[{field:value},{field:value}]")
+
+    sections = []
+    for product_id, block in matches:
+        item_blocks = re.findall(r'\{(.*?)\}', block, flags=re.DOTALL)
+        if not item_blocks:
+            raise ValueError(f"No stock items found for product ID {product_id}.")
+        sections.append((int(product_id), item_blocks))
+
+    return sections
+
+
+def _parse_item_block(block):
+    item = {}
+    parts = [p.strip() for p in block.split(",") if p.strip()]
+
+    for part in parts:
+        if ":" not in part:
+            raise ValueError(f"Invalid item field: {part}")
+
+        key, value = part.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+
+        if not key or not value:
+            raise ValueError(f"Invalid item field: {part}")
+
+        item[key] = value
+
+    if not item:
+        raise ValueError("Empty item data.")
+
+    return item
+
+
+def parse_stock_bulk_format(text):
+    sections = _extract_product_stock_sections(text)
+
+    parsed = []
+    for product_id, item_blocks in sections:
+        items = [_parse_item_block(block) for block in item_blocks]
+        parsed.append((product_id, items))
+
+    return parsed
+
+
+def parse_product_block(block):
+    fields = [x.strip() for x in block.split(" | ")]
+
+    if len(fields) != 6:
+        fields = [x.strip() for x in block.split("|")]
+
+    if len(fields) != 6:
+        raise ValueError(
+            "Product format must have 6 fields: "
+            "Name | Duration | Price | Description | Note | Sticker Emoji ID"
+        )
+
+    return {
+        "name": fields[0],
+        "duration": fields[1],
+        "price": float(fields[2]),
+        "stock": 0,
+        # Database compatibility ke liye rating/features default save rahenge,
+        # lekin admin format aur product details mein show/use nahi honge.
+        "rating": 0,
+        "description": fields[3],
+        "features": [],
+        "note": fields[4],
+        "emoji_id": fields[5],
+    }
+
+def parse_bulk_products_format(text):
+    blocks = re.findall(r'\[(.*?)\]', text, flags=re.DOTALL)
+
+    if not blocks:
+        return [parse_product_block(text)]
+
+    return [parse_product_block(block) for block in blocks]
+
+
+def add_product_admin(name, duration, price, description, note, emoji_id):
+    try:
+        database.add_product(
+            name,
+            duration,
+            price,
+            0,
+            0,          # rating default, hidden
+            description,
+            [],         # features default, hidden
+            note,
+            emoji_id
+        )
+        return f"✅ Product *{name}* added successfully with stock `0` and sticker ID `{emoji_id}`."
+    except Exception as e:
+        return f"❌ Error adding product: {e}"
+
+def add_bulk_products_admin(products_data):
+    try:
+        added_count = 0
+
+        for p in products_data:
+            database.add_product(
+                p["name"],
+                p["duration"],
+                p["price"],
+                0,
+                p["rating"],
+                p["description"],
+                p["features"],
+                p["note"],
+                p.get("emoji_id", "")
+            )
+            added_count += 1
+
+        return f"✅ Successfully added *{added_count}* products with stock `0`."
+
+    except Exception as e:
+        return f"❌ Error adding bulk products: {e}"
+
+
+def add_stock_bulk_admin(stock_sections):
+    try:
+        total_added = 0
+        report = "📦 *Stock Add Report:*\n\n"
+
+        for product_id, items_data in stock_sections:
+            product = database.get_product(product_id)
+            if not product:
+                report += f"❌ Product ID `{product_id}` not found.\n"
+                continue
+
+            added_count = 0
+
+            for item in items_data:
+                if item:
+                    database.add_unsold_item(product_id, item)
+                    added_count += 1
+
+            if added_count > 0:
+                database.update_product_stock(product_id, added_count)
+
+            total_added += added_count
+            report += f"✅ Product ID `{product_id}`: Added `{added_count}` items.\n"
+
+        report += f"\n━━━━━━━━━━━━━━━━━━\nTotal Added: *{total_added}*"
+        return report
+
+    except Exception as e:
+        return f"❌ Error adding stock: {e}"
+
+
+def get_all_products_admin():
+    products = database.get_all_products()
+
+    if not products:
+        return "No products in the database."
+
+    message = "📦 *All Products:*\n\n"
+
+    for p in products:
+        stock_status = "✅ In Stock" if p[4] > 0 else "❌ OUT OF STOCK"
+
+        message += (
+            f"🆔 ID: `{p[0]}`\n"
+            f"📦 Name: *{p[1]}*\n"
+            f"📅 Duration: {p[2]}\n"
+            f"💰 Price: {p[3]} USDT\n"
+            f"📦 Stock: {p[4]} — {stock_status}\n"
+            f"🧩 Sticker ID: `{p[9] if len(p) > 9 and p[9] else 'None'}`\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+        )
+
+    return message
+
+
+def edit_product_price(product_id, new_price):
+    try:
+        product = database.get_product(product_id)
+
+        if not product:
+            return "❌ Product not found."
+
+        database.set_product_price(product_id, new_price)
+        return f"✅ Price for product ID {product_id} updated to {new_price} USDT."
+
+    except Exception as e:
+        return f"❌ Error updating price: {e}"
+
+
+def edit_product_stock(product_id, new_stock):
+    try:
+        product = database.get_product(product_id)
+
+        if not product:
+            return "❌ Product not found."
+
+        database.set_product_stock(product_id, new_stock)
+        return f"✅ Stock for product ID {product_id} updated to {new_stock}."
+
+    except Exception as e:
+        return f"❌ Error updating stock: {e}"
+
+
+def delete_product_admin(product_id):
+    try:
+        product = database.get_product(product_id)
+
+        if not product:
+            return "❌ Product not found."
+
+        database.delete_product(product_id)
+        return f"✅ Product *{product[1]}* deleted successfully."
+
+    except Exception as e:
+        return f"❌ Error deleting product: {e}"
+
+
+def get_all_orders_admin():
+    orders = database.get_all_orders(limit=20)
+
+    if not orders:
+        return "No orders found."
+
+    message = "📝 *Recent Orders (last 20):*\n\n"
+
+    for o in orders:
+        product = database.get_product(o[2])
+        product_name = product[1] if product else "Unknown"
+
+        message += (
+            f"🧾 Order ID: `{o[0]}`\n"
+            f"👤 User ID: `{o[1]}`\n"
+            f"📦 Product: {product_name}\n"
+            f"🔢 Qty: {o[3]}\n"
+            f"💰 Amount: {o[4]} USDT\n"
+            f"💳 Method: {o[5]}\n"
+            f"✅ Status: {o[6]}\n"
+            f"📅 Date: {o[7]}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+        )
+
+    return message
+
+
+def add_balance_admin(user_id, amount):
+    try:
+        user = database.get_user(user_id)
+
+        if not user:
+            return "❌ User not found."
+
+        database.update_user_wallet(user_id, amount)
+        database.add_transaction(user_id, "Deposit (Admin)", amount)
+
+        return f"✅ Added {amount} USDT to user `{user_id}` wallet."
+
+    except Exception as e:
+        return f"❌ Error adding balance: {e}"
+
+
+def get_withdrawal_requests_admin():
+    withdrawals = database.get_pending_withdrawals()
+
+    if not withdrawals:
+        return "No pending withdrawal requests."
+
+    message = "💸 *Pending Withdrawals:*\n\n"
+
+    for req in withdrawals:
+        message += (
+            f"🆔 Withdrawal ID: `{req[0]}`\n"
+            f"👤 User ID: `{req[1]}`\n"
+            f"💰 Amount: {req[2]} USDT\n"
+            f"📍 Address: `{req[3]}`\n"
+            f"⏳ Status: {req[4]}\n"
+            f"📅 Date: {req[5]}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+        )
+
+    return message
+
+
+def approve_withdrawal_admin(withdrawal_id):
+    try:
+        withdrawal = database.get_withdrawal(withdrawal_id)
+
+        if not withdrawal:
+            return "❌ Withdrawal request not found."
+
+        if withdrawal[4] != "Pending":
+            return f"⚠️ Withdrawal already marked as {withdrawal[4]}."
+
+        database.update_withdrawal_status(withdrawal_id, "Approved")
+
+        return f"✅ Withdrawal request `{withdrawal_id}` approved. Send funds manually."
+
+    except Exception as e:
+        return f"❌ Error approving withdrawal: {e}"
+
+
+def get_stats_admin():
+    conn = database.sqlite3.connect(database.DATABASE_NAME)
+    cursor = conn.cursor()
+
+    total_users = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    total_products = cursor.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+    total_orders = cursor.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+
+    total_revenue = cursor.execute(
+        "SELECT SUM(total_amount) FROM orders WHERE status = 'Confirmed'"
+    ).fetchone()[0] or 0
+
+    total_wallet = cursor.execute(
+        "SELECT SUM(wallet_balance) FROM users"
+    ).fetchone()[0] or 0
+
+    total_pending_withdrawals = cursor.execute(
+        "SELECT COUNT(*) FROM withdrawals WHERE status = 'Pending'"
+    ).fetchone()[0]
+
+    total_stock = cursor.execute(
+        "SELECT SUM(stock) FROM products"
+    ).fetchone()[0] or 0
+
+    total_unsold_items = cursor.execute(
+        "SELECT COUNT(*) FROM unsold_items WHERE is_sold = 0"
+    ).fetchone()[0]
+
+    conn.close()
+
+    return (
+        f"📊 *Bot Statistics:*\n\n"
+        f"👥 Total Users: {total_users}\n"
+        f"📦 Total Products: {total_products}\n"
+        f"📦 Product Stock Count: {total_stock}\n"
+        f"📋 Unsold Items Count: {total_unsold_items}\n"
+        f"🛒 Total Orders: {total_orders}\n"
+        f"💰 Total Revenue: {round(total_revenue, 2)} USDT\n"
+        f"👛 Users Wallet Balance: {round(total_wallet, 2)} USDT\n"
+        f"💸 Pending Withdrawals: {total_pending_withdrawals}\n"
+    )
+
+
+-------------
+
+Bot.py
+---------------------
+
+import logging
+import datetime
+import json
+from html import escape as html_escape
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    MessageHandler, filters, ContextTypes, ConversationHandler
+)
+
+import config
+import database
+import products
+import payment
+import admin
+import utils
+
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+logger = logging.getLogger(__name__)
+
+
+
+def tg(emoji_id: str, fallback: str) -> str:
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+CUSTOM_EMOJIS = {
+    # start
+    "products": ("5456140674028019486", "🛍️"),
+    "purchase_history": ("5210956306952758910", "📜"),
+    "welcome_star": ("5325547803936572038", "✨"),
+    "choose_option": ("5406745015365943482", "👇"),
+
+    # profile
+    "profile": ("5461117441612462242", "👤"),
+    "id": ("5427168083074628963", "🆔"),
+    "username": ("5260293700088511294", "📛"),
+    "date": ("5413879192267805083", "📅"),
+    "wallet": ("5409048419211682843", "💰"),
+    "box": ("5231012545799666522", "📦"),
+    "gift": ("5217822164362739968", "🎁"),
+    "link": ("5305265301917549162", "🔗"),
+
+    # purchase history
+    "no_orders": ("5406683434124859552", "📭"),
+    "arrow": ("5416117059207572332", "👉"),
+
+    # wallet
+    "diamond": ("5427168083074628963", "💎"),
+    "stats": ("5231200819986047254", "📊"),
+
+    # order details
+    "order_details": ("5231012545799666522", "🔎"),
+
+    # support
+    "support_center": ("5395695537687123235", "🆘"),
+    "faq": ("5282843764451195532", "📖"),
+    "contact": ("5443038326535759644", "💬"),
+    "announcement": ("5424818078833715060", "🔔"),
+    "confirm": ("5206607081334906820", "✅"),
+    "cancel": ("5210952531676504517", "❌"),
+    "order": ("5406683434124859552", "🛒"),
+}
+
+
+def ce(name: str) -> str:
+    emoji_id, fallback = CUSTOM_EMOJIS.get(name, ("", ""))
+    if not emoji_id:
+        return fallback
+    return tg(emoji_id, fallback)
+
+
+def product_purchase_keyboard(product, button_style="success"):
+    """
+    Announcement/update message ke andar sirf isi specific product ka single colored button.
+    utils.btn helper use hota hai, isi liye baqi colored buttons jaisa render hoga.
+    """
+    return utils.product_update_purchase_keyboard(product, style=button_style)
+
+
+
+
+def find_recent_product_by_name(product_name):
+    """
+    Product add ke baad latest product ko name se pick karta hai.
+    database.get_all_products() id DESC order mein hai.
+    """
+    products_list = database.get_all_products()
+
+    for product in products_list:
+        if str(product[1]).strip().lower() == str(product_name).strip().lower():
+            return product
+
+    return products_list[0] if products_list else None
+
+
+def product_update_message(title, product, lines=None):
+    product_name = html_escape(str(product[1])) if product else "Unknown"
+    stock = product[4] if product and len(product) > 4 else "N/A"
+
+    text = (
+        f"{ce('announcement')} <b>{html_escape(title)}</b>\n\n"
+        f"{ce('box')} Product: <b>{product_name}</b>\n"
+        f"{ce('box')} Available Stock: <b>{stock}</b>\n"
+    )
+
+    if lines:
+        for line in lines:
+            text += line + "\n"
+
+    text += f"\n{ce('choose_option')} Click below to buy this product."
+    return text
+
+
+
+
+async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text: str, parse_mode: str = "Markdown"):
+    try:
+        await context.bot.send_message(
+            chat_id=config.ADMIN_ID,
+            text=text,
+            parse_mode=parse_mode
+        )
+    except Exception as e:
+        logger.error(f"Failed to notify admin {config.ADMIN_ID}: {e}")
+
+
+async def broadcast_to_all_users(context: ContextTypes.DEFAULT_TYPE, text: str, reply_markup=None, parse_mode: str = "Markdown"):
+    users = database.get_all_users()
+    sent = 0
+    for user in users:
+        try:
+            await context.bot.send_message(
+                chat_id=user[0],
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+            sent += 1
+        except Exception:
+            pass
+    return sent, len(users)
+
+
+(
+    QUANTITY,
+    WITHDRAW_AMOUNT,
+    WITHDRAW_ADDRESS,
+    CONTACT_ADMIN,
+    BINANCE_ORDER_ID,
+    ORDER_DETAILS,
+    ADMIN_ORDER_DETAILS,
+    ADMIN_ADD_PRODUCT,
+    ADMIN_ADD_ITEMS,
+    ADMIN_EDIT_PRICE,
+    ADMIN_EDIT_STOCK,
+    ADMIN_ADD_BALANCE,
+    ADMIN_APPROVE_WITHDRAWAL,
+    ADMIN_BROADCAST,
+    ADMIN_DELETE_PRODUCT,
+    ADMIN_BULK_ADD_PRODUCTS,
+) = range(16)
+
+
+# ══════════════════════════════════════════════════════════
+#   START
+# ══════════════════════════════════════════════════════════
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+
+    db_user = database.get_user(user.id)
+    if not db_user:
+        database.create_user(user.id, user.username)
+
+        if context.args and context.args[0].startswith('ref_'):
+            try:
+                referrer_id = int(context.args[0].split('_')[1])
+
+                if referrer_id != user.id:
+                    conn = database.sqlite3.connect(database.DATABASE_NAME)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "UPDATE users SET referrals = referrals + 1 WHERE id = ?",
+                        (referrer_id,)
+                    )
+                    conn.commit()
+                    conn.close()
+
+            except (IndexError, ValueError):
+                pass
+
+    first_name = html_escape(user.first_name or "there")
+
+    welcome_text = (
+        f"{ce('welcome_star')} <b>Welcome to Bunny Tools!</b> {ce('welcome_star')}\n\n"
+        f"Hey <b>{first_name}</b> 👋\n\n"
+        f"We offer premium digital products at the best prices with fast, secure, "
+        f"and fully automated delivery.\n\n"
+        f"<blockquote>"
+        f"{ce('products')} <b>Products</b> — Browse & buy products\n"
+        f"{ce('wallet')} <b>Wallet</b> — Deposit funds and pay faster\n"
+        f"{ce('profile')} <b>Profile</b> — Balance, orders and referrals\n"
+        f"{ce('support_center')} <b>Support</b> — Get help anytime"
+        f"</blockquote>\n\n"
+        f"{ce('choose_option')} Choose an option below:"
+    )
+
+    if update.message:
+        await update.message.reply_text(
+            welcome_text,
+            reply_markup=utils.main_menu_keyboard(),
+            parse_mode='HTML'
+        )
+
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(
+            welcome_text,
+            reply_markup=utils.main_menu_keyboard(),
+            parse_mode='HTML'
+        )
+
+
+# ══════════════════════════════════════════════════════════
+#   USER MENU HELPERS
+# ══════════════════════════════════════════════════════════
+
+async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
+    user_id = update.effective_user.id
+    user = database.get_user(user_id)
+
+    if not user:
+        text = "Profile not found."
+    else:
+        bot_username = (await context.bot.get_me()).username
+        username = html_escape(user[1] if user[1] else "Unknown")
+        joined = html_escape(str(user[2]))
+
+        text = (
+            f"{ce('profile')} <b>My Profile</b>\n\n"
+            f"{ce('id')} ID: <code>{user[0]}</code>\n"
+            f"{ce('username')} Username: @{username}\n"
+            f"{ce('date')} Joined: {joined}\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"{ce('wallet')} Wallet Balance: {user[3]} USDT\n"
+            f"{ce('box')} Total Orders: {user[4]}\n"
+            f"👥 Referrals: {user[5]}\n"
+            f"{ce('gift')} Referral Earnings: {user[6]} USDT\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"{ce('link')} <b>Your Referral Link:</b>\n"
+            f"<code>t.me/{html_escape(bot_username)}?start=ref_{user[0]}</code>\n\n"
+            f"👥 <b>Refer & Earn:</b> 10% commission"
+        )
+
+    if edit and update.callback_query:
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=utils.main_menu_keyboard(),
+            parse_mode='HTML'
+        )
+    else:
+        await update.message.reply_text(text, parse_mode='HTML')
+
+
+async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
+    user_id = update.effective_user.id
+    orders = database.get_user_orders(user_id)
+
+    if not orders:
+        text = (
+            f"{ce('no_orders')} <b>No Orders Yet</b>\n\n"
+            "You haven't made any purchases yet.\n\n"
+            f"{ce('arrow')} Go to <b>Products</b> to buy something."
+        )
+    else:
+        text = f"{ce('order_details')} <b>Purchase History</b>\n\n"
+
+        for order in orders:
+            product = database.get_product(order[2])
+            product_name = html_escape(product[1] if product else "Unknown")
+
+            text += (
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"<b>Order #{html_escape(str(order[0]))}</b>\n"
+                f"{product_name}\n"
+                f"Qty: {order[3]} | {order[4]} USDT | {html_escape(str(order[6]))}\n"
+            )
+
+        text += "━━━━━━━━━━━━━━━━━━"
+
+    if edit and update.callback_query:
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=utils.main_menu_keyboard(),
+            parse_mode='HTML'
+        )
+    else:
+        await update.message.reply_text(text, parse_mode='HTML')
+
+
+def build_wallet_message(user, transactions):
+    msg = (
+        f"{ce('wallet')} <b>My Wallet</b>\n\n"
+        f"{ce('diamond')} Balance: <b>{user[3]} USDT</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"{ce('stats')} <b>Recent Transactions:</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+    )
+
+    if transactions:
+        for tx in transactions[:5]:
+            sign = "+" if tx[3] > 0 else ""
+            msg += f"{sign}{tx[3]} USDT | {html_escape(str(tx[2]))} | {html_escape(str(tx[4]).split(' ')[0])}\n"
+    else:
+        msg += "No recent transactions.\n"
+
+    msg += f"━━━━━━━━━━━━━━━━━━\n\n{ce('choose_option')} <b>Options:</b>"
+    return msg
+
+
+# ══════════════════════════════════════════════════════════
+#   REPLY TEXT HANDLER
+# ══════════════════════════════════════════════════════════
+
+async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.message.text
+    user_id = update.effective_user.id
+
+    if text == "🛍️ Products":
+        products_list = database.get_all_products()
+
+        if not products_list:
+            await update.message.reply_text(
+                "❌ No products available right now.",
+                reply_markup=utils.main_menu_keyboard()
+            )
+            return
+
+        await update.message.reply_text(
+            "📦 *All Products* — choose one:",
+            reply_markup=utils.products_list_keyboard(products_list),
+            parse_mode='Markdown'
+        )
+
+    elif text == "👤 Profile":
+        await show_profile(update, context)
+
+    elif text == "📜 Purchase History":
+        await show_purchase_history(update, context)
+
+    elif text == "🔎 Order Details":
+        await update.message.reply_text(
+            f"{ce('order_details')} <b>Order Details</b>\n\nPlease send your Order ID:",
+            parse_mode='HTML'
+        )
+        context.user_data['waiting_for_order_details'] = True
+
+    elif text == "💰 Wallet":
+        user = database.get_user(user_id)
+        transactions = database.get_user_transactions(user_id)
+
+        msg = build_wallet_message(user, transactions)
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.wallet_options_keyboard(),
+            parse_mode='HTML'
+        )
+
+    elif text == "🆘 Support":
+        msg = (
+            f"{ce('support_center')} <b>Support Center</b>\n\n"
+            f"{ce('faq')} <b>FAQ</b> — Common questions\n"
+            f"{ce('contact')} <b>Contact Admin</b> — Message to owner\n"
+            f"{ce('announcement')} <b>Announcements</b> — Join our channel\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"{ce('choose_option')} Choose option:"
+        )
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.support_keyboard(),
+            parse_mode='HTML'
+        )
+
+
+
+# ══════════════════════════════════════════════════════════
+#   USER INLINE BUTTON HANDLER
+# ══════════════════════════════════════════════════════════
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    user_id = update.effective_user.id
+
+    if data == 'main_menu':
+        await start(update, context)
+        return ConversationHandler.END
+
+    elif data == 'products':
+        products_list = database.get_all_products()
+
+        if not products_list:
+            await query.edit_message_text(
+                "❌ No products available right now.",
+                reply_markup=utils.main_menu_keyboard()
+            )
+            return ConversationHandler.END
+
+        await query.edit_message_text(
+            "📦 *All Products* — choose one:",
+            reply_markup=utils.products_list_keyboard(products_list),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    elif data == 'profile':
+        await show_profile(update, context, edit=True)
+        return ConversationHandler.END
+
+    elif data == 'purchase_history':
+        await show_purchase_history(update, context, edit=True)
+        return ConversationHandler.END
+
+    elif data == 'order_details':
+        await query.edit_message_text(
+            f"{ce('order_details')} <b>Order Details</b>\n\nPlease send your Order ID:",
+            reply_markup=utils.main_menu_keyboard(),
+            parse_mode='HTML'
+        )
+        return ORDER_DETAILS
+
+    elif data.startswith('product_'):
+        product_id = int(data.split('_')[1])
+        context.user_data['current_product_id'] = product_id
+
+        details_msg = products.get_product_details_message(product_id)
+
+        await query.edit_message_text(
+            details_msg,
+            reply_markup=utils.product_details_keyboard(),
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
+
+    elif data == 'order_now':
+        product_id = context.user_data.get('current_product_id')
+
+        if not product_id:
+            await query.edit_message_text(
+                "❌ Product not selected.",
+                reply_markup=utils.main_menu_keyboard()
+            )
+            return ConversationHandler.END
+
+        product = database.get_product(product_id)
+
+        if not product or product[4] <= 0:
+            await query.edit_message_text(
+                "❌ This product is out of stock.",
+                reply_markup=utils.products_list_keyboard(database.get_all_products())
+            )
+            return ConversationHandler.END
+
+        text = (
+            f"🛍️ *{product[1]}*\n"
+            f"💰 Price per item: {product[3]} USDT\n"
+            f"📦 Available: {product[4]}\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"*How many would you like to buy?*\n"
+            f"_(Enter a number between 1 and {product[4]})_"
+        )
+
+        await query.edit_message_text(
+            text,
+            reply_markup=utils.quantity_selection_keyboard(),
+            parse_mode='Markdown'
+        )
+        return QUANTITY
+
+    elif data == 'back_to_product_details':
+        product_id = context.user_data.get('current_product_id')
+
+        if product_id:
+            await query.edit_message_text(
+                products.get_product_details_message(product_id),
+                reply_markup=utils.product_details_keyboard(),
+                parse_mode='HTML'
+            )
+        else:
+            await start(update, context)
+
+        return ConversationHandler.END
+
+    elif data == 'back_to_quantity':
+        product_id = context.user_data.get('current_product_id')
+        product = database.get_product(product_id)
+
+        text = (
+            f"🛍️ *{product[1]}*\n"
+            f"💰 Price per item: {product[3]} USDT\n"
+            f"📦 Available: {product[4]}\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"*How many would you like to buy?*\n"
+            f"_(Enter a number between 1 and {product[4]})_"
+        )
+
+        await query.edit_message_text(
+            text,
+            reply_markup=utils.quantity_selection_keyboard(),
+            parse_mode='Markdown'
+        )
+        return QUANTITY
+
+    elif data == 'pay_binance':
+        total_amount = context.user_data.get('total_amount')
+        context.user_data['payment_method'] = 'Binance'
+
+        await query.edit_message_text(
+            payment.get_binance_payment_details(total_amount),
+            reply_markup=utils.binance_payment_keyboard(),
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
+
+    elif data == 'pay_wallet':
+        total_amount = context.user_data.get('total_amount')
+        context.user_data['payment_method'] = 'Wallet'
+
+        text = payment.get_wallet_payment_summary(user_id, total_amount)
+        user = database.get_user(user_id)
+
+        if user and user[3] >= total_amount:
+            reply_markup = utils.wallet_payment_keyboard()
+        else:
+            text += "\n\n👉 Please deposit first using *Wallet → Deposit*\n👉 Or select *Pay with Binance*"
+            reply_markup = utils.insufficient_balance_keyboard()
+
+        await query.edit_message_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
+
+    elif data == 'back_to_payment_method':
+        product_id = context.user_data.get('current_product_id')
+        quantity = context.user_data.get('quantity')
+        total_amount = context.user_data.get('total_amount')
+        product = database.get_product(product_id)
+
+        text = (
+            f"✅ *Order Summary*\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📦 Product: {product[1]}\n"
+            f"📅 Duration: {product[2]}\n"
+            f"💰 Price/item: {product[3]} USDT\n"
+            f"🔢 Quantity: {quantity}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💵 *Total: {total_amount} USDT*\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"*Select Payment Method:*"
+        )
+
+        await query.edit_message_text(
+            text,
+            reply_markup=utils.payment_method_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    elif data == 'cancel_order':
+        await query.edit_message_text(
+            "❌ Order cancelled.",
+            reply_markup=utils.main_menu_keyboard()
+        )
+        return ConversationHandler.END
+
+    elif data == 'check_binance_payment':
+        await query.edit_message_text(
+            "✅ <b>Payment Sent?</b>\n\n"
+            "Now send your <b>Binance Order ID / Transaction ID</b> here.\n\n"
+            "Example: <code>1234567890</code>",
+            reply_markup=utils.binance_payment_keyboard(),
+            parse_mode='HTML'
+        )
+        return BINANCE_ORDER_ID
+
+    elif data == 'confirm_wallet_payment':
+        success, msg = payment.process_wallet_payment(
+            user_id,
+            utils.generate_order_id(),
+            context.user_data.get('current_product_id'),
+            context.user_data.get('quantity'),
+            context.user_data.get('total_amount')
+        )
+
+        if success:
+            await deliver_product(update, context, 'Wallet')
+        else:
+            await query.edit_message_text(
+                msg,
+                reply_markup=utils.payment_method_keyboard(),
+                parse_mode='Markdown'
+            )
+
+        return ConversationHandler.END
+
+    elif data == 'wallet':
+        user = database.get_user(user_id)
+        transactions = database.get_user_transactions(user_id)
+
+        text = build_wallet_message(user, transactions)
+
+        await query.edit_message_text(
+            text,
+            reply_markup=utils.wallet_options_keyboard(),
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
+
+    elif data == 'deposit_wallet':
+        text = (
+            f"💰 *Deposit Funds*\n\n"
+            f"Send USDT to this address:\n\n"
+            f"📍 `{config.BINANCE_WALLET_ADDRESS}`\n\n"
+            f"🔁 Network: {config.BINANCE_NETWORK} \\(USDT\\)\n"
+            f"💵 Minimum: 10 USDT\n\n"
+            f"━━━━━━━━━━━━━━━━━━"
+        )
+
+        await query.edit_message_text(
+            text,
+            reply_markup=utils.deposit_wallet_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    elif data == 'check_deposit_payment':
+        await query.edit_message_text(
+            "✅ Deposit request sent to admin.\nBalance will be updated once confirmed.",
+            reply_markup=utils.wallet_options_keyboard()
+        )
+
+        await notify_admins(
+            context,
+            f"⚠️ User `{user_id}` claims deposit.\nUse: `/addbalance {user_id} <amount>`",
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    elif data == 'withdraw_wallet':
+        user = database.get_user(user_id)
+
+        await query.edit_message_text(
+            f"💸 *Withdraw Funds*\n\n"
+            f"Your Balance: {user[3]} USDT\n"
+            f"Minimum: 20 USDT | Fee: 1 USDT\n\n"
+            f"*Enter amount to withdraw:*",
+            reply_markup=utils.wallet_options_keyboard(),
+            parse_mode='Markdown'
+        )
+        return WITHDRAW_AMOUNT
+
+    elif data == 'support':
+        await query.edit_message_text(
+            (
+                f"{ce('support_center')} <b>Support Center</b>\n\n"
+                f"{ce('faq')} <b>FAQ</b> — Common questions\n"
+                f"{ce('contact')} <b>Contact Admin</b> — Message to owner\n"
+                f"{ce('announcement')} <b>Announcements</b> — Join our channel\n\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"{ce('choose_option')} Choose option:"
+            ),
+            reply_markup=utils.support_keyboard(),
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
+
+    elif data == 'faq':
+        await query.edit_message_text(
+            "❓ *FAQ*\n\n"
+            "*Q: How long does delivery take?*\n"
+            "A: Delivery is instant after payment confirmation.\n\n"
+            "*Q: What if my account stops working?*\n"
+            "A: Contact admin with your Order ID for replacement within warranty.\n\n"
+            "*Q: Can I share the account?*\n"
+            "A: No, sharing violates our policy.",
+            reply_markup=utils.support_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    elif data == 'contact_admin':
+        await query.edit_message_text(
+            "✍️ Please type your message for the admin below:",
+            reply_markup=utils.support_keyboard()
+        )
+        return CONTACT_ADMIN
+
+    return ConversationHandler.END
+
+
+# ══════════════════════════════════════════════════════════
+#   USER CONVERSATION HANDLERS
+# ══════════════════════════════════════════════════════════
+
+async def handle_binance_order_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    binance_order_id = update.message.text.strip()
+    user_id = update.effective_user.id
+
+    await update.message.reply_text(
+        "⏳ Verifying Binance payment... Please wait.",
+        parse_mode='HTML'
+    )
+
+    success, msg = payment.process_binance_payment(
+        user_id,
+        utils.generate_order_id(),
+        context.user_data.get('current_product_id'),
+        context.user_data.get('quantity'),
+        context.user_data.get('total_amount'),
+        binance_order_id=binance_order_id
+    )
+
+    if success:
+        await deliver_product(update, context, 'Binance')
+    else:
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.payment_method_keyboard(),
+            parse_mode='HTML'
+        )
+
+    return ConversationHandler.END
+
+
+async def handle_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        quantity = int(update.message.text)
+        product_id = context.user_data.get('current_product_id')
+        product = database.get_product(product_id)
+
+        if not product:
+            await update.message.reply_text("❌ Product not found.")
+            return ConversationHandler.END
+
+        if quantity < 1 or quantity > product[4]:
+            await update.message.reply_text(
+                f"⚠️ Enter a number between 1 and {product[4]}.",
+                reply_markup=utils.quantity_selection_keyboard()
+            )
+            return QUANTITY
+
+        total_amount = round(quantity * product[3], 4)
+
+        context.user_data['quantity'] = quantity
+        context.user_data['total_amount'] = total_amount
+
+        await update.message.reply_text(
+            f"✅ *Order Summary*\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📦 Product: {product[1]}\n"
+            f"📅 Duration: {product[2]}\n"
+            f"💰 Price/item: {product[3]} USDT\n"
+            f"🔢 Quantity: {quantity}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💵 *Total: {total_amount} USDT*\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"*Select Payment Method:*",
+            reply_markup=utils.payment_method_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    except ValueError:
+        await update.message.reply_text(
+            "⚠️ Please enter a valid number.",
+            reply_markup=utils.quantity_selection_keyboard()
+        )
+        return QUANTITY
+
+
+async def handle_withdraw_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        amount = float(update.message.text)
+        user_id = update.effective_user.id
+        user = database.get_user(user_id)
+
+        if amount < 20:
+            await update.message.reply_text("⚠️ Minimum is 20 USDT. Enter again or /cancel:")
+            return WITHDRAW_AMOUNT
+
+        if amount > user[3]:
+            await update.message.reply_text(
+                f"⚠️ Insufficient balance: {user[3]} USDT. Enter again or /cancel:"
+            )
+            return WITHDRAW_AMOUNT
+
+        context.user_data['withdraw_amount'] = amount
+
+        await update.message.reply_text("📍 Enter your USDT \\(BEP\\-20\\) wallet address:", parse_mode='MarkdownV2')
+        return WITHDRAW_ADDRESS
+
+    except ValueError:
+        await update.message.reply_text("⚠️ Please enter a valid number.")
+        return WITHDRAW_AMOUNT
+
+
+async def handle_withdraw_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    address = update.message.text
+    amount = context.user_data.get('withdraw_amount')
+    user_id = update.effective_user.id
+
+    database.update_user_wallet(user_id, -amount)
+    database.add_transaction(user_id, "Withdrawal Request", -amount)
+    database.create_withdrawal_request(user_id, amount, address)
+
+    await update.message.reply_text(
+        f"✅ Withdrawal of {amount} USDT submitted. Admin will process it soon.",
+        reply_markup=utils.main_menu_keyboard()
+    )
+
+    await notify_admins(
+        context,
+        (
+            f"💸 *New Withdrawal*\n\n"
+            f"User: `{user_id}`\n"
+            f"Amount: {amount} USDT\n"
+            f"Address: `{address}`"
+        ),
+        parse_mode='Markdown'
+    )
+
+    return ConversationHandler.END
+
+
+async def handle_contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    msg_text = update.message.text
+    user_id = update.effective_user.id
+    username = update.effective_user.username or "Unknown"
+
+    await notify_admins(
+        context,
+        (
+            f"📩 *Message from User*\n\n"
+            f"ID: `{user_id}`\n"
+            f"Username: @{username}\n\n"
+            f"{msg_text}"
+        ),
+        parse_mode='Markdown'
+    )
+
+    await update.message.reply_text(
+        "✅ Message sent to admin.",
+        reply_markup=utils.main_menu_keyboard()
+    )
+
+    return ConversationHandler.END
+
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text(
+        "❌ Operation cancelled.",
+        reply_markup=utils.main_menu_keyboard()
+    )
+    return ConversationHandler.END
+
+
+# ══════════════════════════════════════════════════════════
+#   PRODUCT DELIVERY
+# ══════════════════════════════════════════════════════════
+
+def format_item_data_for_delivery(item_data):
+    lines = []
+
+    for key, value in item_data.items():
+        label = key.replace("_", " ").title()
+        lines.append(f"{label}: `{value}`")
+
+    return "\n".join(lines)
+
+
+def build_order_details_message(order, is_admin=False):
+    """
+    orders table columns:
+    0 id, 1 user_id, 2 product_id, 3 quantity, 4 total_amount,
+    5 payment_method, 6 status, 7 order_date, 8 delivery_details
+    """
+    product = database.get_product(order[2])
+    product_name = product[1] if product else "Unknown"
+
+    try:
+        delivery_details = json.loads(order[8]) if order[8] else []
+    except Exception:
+        delivery_details = []
+
+    text = f"{ce('order_details')} <b>Order Details</b>\n\n━━━━━━━━━━━━━━━━━━\n"
+    text += f"🧾 Order ID: <code>{html_escape(str(order[0]))}</code>\n"
+
+    if is_admin:
+        text += f"{ce('profile')} User ID: <code>{order[1]}</code>\n"
+
+    text += (
+        f"📅 Date: {order[7]}\n"
+        f"📦 Product: {product_name}\n"
+        f"🔢 Quantity: {order[3]}\n"
+        f"💰 Paid: {order[4]} USDT\n"
+        f"💳 Method: {order[5]}\n"
+        f"✅ Status: {order[6]}\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔑 *Credentials:*\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+    )
+
+    if not delivery_details:
+        text += "No credentials saved for this order."
+        return text
+
+    if isinstance(delivery_details, dict):
+        delivery_details = [delivery_details]
+
+    for i, item_data in enumerate(delivery_details, start=1):
+        if len(delivery_details) > 1:
+            text += f"*Item {i}/{len(delivery_details)}*\n"
+
+        if isinstance(item_data, dict):
+            text += format_item_data_for_delivery(item_data) + "\n\n"
+        else:
+            text += f"`{item_data}`\n\n"
+
+    text += "━━━━━━━━━━━━━━━━━━"
+    return text
+
+
+async def handle_order_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    order_id = update.message.text.strip()
+    user_id = update.effective_user.id
+
+    order = database.get_order_by_id(order_id)
+
+    if not order:
+        await update.message.reply_text(
+            "❌ Order not found. Please check your Order ID.",
+            reply_markup=utils.main_menu_keyboard()
+        )
+        return ConversationHandler.END
+
+    if str(order[1]) != str(user_id):
+        await update.message.reply_text(
+            "⛔ This order does not belong to your account.",
+            reply_markup=utils.main_menu_keyboard()
+        )
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        build_order_details_message(order, is_admin=False),
+        reply_markup=utils.main_menu_keyboard(),
+        parse_mode='HTML'
+    )
+    return ConversationHandler.END
+
+
+async def handle_admin_order_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    order_id = update.message.text.strip()
+    order = database.get_order_by_id(order_id)
+
+    if not order:
+        await update.message.reply_text(
+            "❌ Order not found. Please check Order ID.",
+            reply_markup=utils.admin_main_keyboard()
+        )
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        build_order_details_message(order, is_admin=True),
+        reply_markup=utils.admin_main_keyboard(),
+        parse_mode='HTML'
+    )
+    return ConversationHandler.END
+
+
+async def deliver_product(update: Update, context: ContextTypes.DEFAULT_TYPE, payment_method: str):
+    user_id = update.effective_user.id
+
+    product_id = context.user_data.get('current_product_id')
+    quantity = context.user_data.get('quantity')
+    total_amount = context.user_data.get('total_amount')
+
+    product = database.get_product(product_id)
+    order_id = utils.generate_order_id()
+    items = database.get_unsold_items(product_id, quantity)
+
+    if len(items) < quantity:
+        if payment_method == 'Wallet':
+            database.update_user_wallet(user_id, total_amount)
+            database.add_transaction(user_id, "Refund (Out of Stock)", total_amount)
+
+        msg = "❌ Out of stock during purchase. "
+        msg += "Wallet refunded." if payment_method == 'Wallet' else "Contact admin for refund."
+
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                msg,
+                reply_markup=utils.main_menu_keyboard()
+            )
+        else:
+            await update.message.reply_text(
+                msg,
+                reply_markup=utils.main_menu_keyboard()
+            )
+
+        return
+
+    # New flexible database format:
+    # items = [{"id": 1, "data": {"email": "...", "password": "..."}}]
+    #
+    # Fallback support for old tuple format:
+    # items = [("email", "password")]
+    if isinstance(items[0], dict):
+        item_ids = [item["id"] for item in items]
+        delivery_details = [item["data"] for item in items]
+        database.mark_items_as_sold(product_id, item_ids)
+    else:
+        emails = [item[0] for item in items]
+        delivery_details = [
+            {
+                "email": item[0],
+                "password": item[1]
+            }
+            for item in items
+        ]
+        database.mark_items_as_sold(product_id, emails)
+
+    database.update_product_stock(product_id, -quantity)
+
+    conn = database.sqlite3.connect(database.DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET total_orders = total_orders + 1 WHERE id = ?",
+        (user_id,)
+    )
+    conn.commit()
+    conn.close()
+
+    database.create_order(
+        order_id,
+        user_id,
+        product_id,
+        quantity,
+        total_amount,
+        payment_method,
+        "Confirmed",
+        delivery_details
+    )
+
+    date_str = datetime.datetime.now().strftime('%d %b %Y')
+
+    text = (
+        f"✅ *ORDER CONFIRMED!*\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🧾 Order ID: `{order_id}`\n"
+        f"📅 Date: {date_str}\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 Product: {product[1]}\n"
+        f"🔢 Quantity: {quantity}\n"
+        f"💰 Paid: {total_amount} USDT via {payment_method}\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🔑 *Login Details:*\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+    )
+
+    if quantity == 1:
+        text += format_item_data_for_delivery(delivery_details[0]) + "\n\n"
+    else:
+        for i, item_data in enumerate(delivery_details):
+            text += f"*Item {i + 1}/{quantity}*\n"
+            text += format_item_data_for_delivery(item_data) + "\n\n"
+
+    text += (
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "⚠️ *Important:*\n"
+        "• Do not change the password\n"
+        "• Do not share with others\n"
+        "• Use on 1 device only"
+    )
+
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=utils.order_confirmed_keyboard(),
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text(
+            text,
+            reply_markup=utils.order_confirmed_keyboard(),
+            parse_mode='Markdown'
+        )
+
+
+# ══════════════════════════════════════════════════════════
+#   ADMIN PANEL
+# ══════════════════════════════════════════════════════════
+
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not admin.is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    await update.message.reply_text(
+        "👑 *Admin Panel*\n\nSelect an action:",
+        reply_markup=utils.admin_main_keyboard(),
+        parse_mode='Markdown'
+    )
+
+
+async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+
+    if not admin.is_admin(update.effective_user.id):
+        await query.answer("⛔ Unauthorized", show_alert=True)
+        return ConversationHandler.END
+
+    await query.answer()
+
+    data = query.data
+
+    if data == 'admin_panel_back':
+        await query.edit_message_text(
+            "👑 *Admin Panel*\n\nSelect an action:",
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    elif data == 'admin_view_products':
+        await query.edit_message_text(
+            admin.get_all_products_admin(),
+            reply_markup=utils.admin_back_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    elif data == 'admin_view_all_orders':
+        await query.edit_message_text(
+            admin.get_all_orders_admin(),
+            reply_markup=utils.admin_back_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    elif data == 'admin_withdraw_requests':
+        await query.edit_message_text(
+            admin.get_withdrawal_requests_admin(),
+            reply_markup=utils.admin_back_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    elif data == 'admin_view_stats':
+        await query.edit_message_text(
+            admin.get_stats_admin(),
+            reply_markup=utils.admin_back_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+
+    elif data == 'admin_order_details':
+        await query.edit_message_text(
+            "🔎 *Admin Order Details*\n\nSend Order ID:",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_ORDER_DETAILS
+
+    elif data == 'admin_add_product':
+        await query.edit_message_text(
+            "➕ *Add Product*\n\n"
+            "Stock field nahi dena. Stock auto `0` se start hoga.\n"
+            "Rating aur Features field remove kar di gayi hain.\n\n"
+            "Format:\n"
+            "`Name | Duration | Price | Description | Note | Sticker Emoji ID`\n\n"
+            "Example:\n"
+            "`Netflix Premium | 1 Month | 3.5 | Premium account | No password change | 5456140674028019486`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_ADD_PRODUCT
+
+    elif data == 'admin_bulk_add_products':
+        await query.edit_message_text(
+            "➕ *Bulk Add Products*\n\n"
+            "Stock field nahi dena. Har product stock `0` se start hoga.\n"
+            "Rating aur Features field remove kar di gayi hain.\n\n"
+            "Format:\n"
+            "`[Name | Duration | Price | Description | Note | Sticker Emoji ID] [Name2 | Duration | Price | Description | Note | Sticker Emoji ID]`\n\n"
+            "Example:\n"
+            "`[Netflix | 1 Month | 3.5 | Premium account | No password change | 5456140674028019486] [Spotify | 1 Month | 2 | Music premium | Warranty 7 days | 5409048419211682843]`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_BULK_ADD_PRODUCTS
+
+    elif data == 'admin_add_items':
+        await query.edit_message_text(
+            "📦 *Add Stock/Items*\n\n"
+            "Stock add karne ka main format:\n\n"
+            "`Product_ID[{field1:value1,field2:value2},{field1:value1,field2:value2}]`\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "*Format Breakdown:*\n"
+            "`Product_ID` = jis product mein stock add karna hai\n"
+            "`[...]` = stock items ki list\n"
+            "`{...}` = aik stock item/account\n"
+            "`field:value` = item ki detail, jaise email, password, link, key\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "*Email/Password Product Example:*\n"
+            "`1[{email:saimpkf@gmail.com,password:123},{email:test@gmail.com,password:456}]`\n\n"
+            "Iska matlab:\n"
+            "Product ID `1` mein 2 stock items add hongi.\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "*Link Product Example:*\n"
+            "`2[{link:https://example.com/account1},{link:https://example.com/account2}]`\n\n"
+            "Iska matlab:\n"
+            "Product ID `2` mein 2 link items add hongi.\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "*License Key Product Example:*\n"
+            "`3[{key:XXXXX-XXXXX},{key:YYYYY-YYYYY}]`\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "*Bulk Stock Example:*\n"
+            "`1[{email:a@gmail.com,password:111},{email:b@gmail.com,password:222}] 2[{link:https://x.com/1},{link:https://x.com/2}] 3[{key:XXXXX},{key:YYYYY}]`\n\n"
+            "Iska matlab:\n"
+            "Product `1`, `2`, aur `3` ka stock aik hi message mein add hoga.\n\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "⚠️ Spaces field ke andar avoid karo.\n"
+            "✅ Jitni `{...}` items doge, stock auto utna increase hoga.",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_ADD_ITEMS
+
+    elif data == 'admin_edit_price':
+        await query.edit_message_text(
+            "💲 *Edit Product Price*\n\n"
+            "Send like this:\n\n"
+            "`product_id new_price`\n\n"
+            "Example: `1 4.5`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_EDIT_PRICE
+
+    elif data == 'admin_edit_stock':
+        await query.edit_message_text(
+            "🔢 *Edit Product Stock*\n\n"
+            "Send like this:\n\n"
+            "`product_id new_stock`\n\n"
+            "Example: `1 20`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_EDIT_STOCK
+
+    elif data == 'admin_add_balance':
+        await query.edit_message_text(
+            "💰 *Add User Balance*\n\n"
+            "Send like this:\n\n"
+            "`user_id amount`\n\n"
+            "Example: `123456789 10`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_ADD_BALANCE
+
+    elif data == 'admin_approve_withdrawal':
+        await query.edit_message_text(
+            "✅ *Approve Withdrawal*\n\n"
+            "Send withdrawal ID:",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_APPROVE_WITHDRAWAL
+
+    elif data == 'admin_broadcast':
+        await query.edit_message_text(
+            "📢 *Broadcast Message*\n\n"
+            "Send the message you want to broadcast:",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_BROADCAST
+
+    elif data == 'admin_delete_product':
+        await query.edit_message_text(
+            "🗑️ *Delete Product*\n\n"
+            "Send product ID:",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ADMIN_DELETE_PRODUCT
+
+    return ConversationHandler.END
+
+
+# ══════════════════════════════════════════════════════════
+#   ADMIN INPUT HANDLERS
+# ══════════════════════════════════════════════════════════
+
+async def handle_admin_add_product(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    try:
+        data = update.message.text.split(' | ')
+
+        if len(data) != 6:
+            await update.message.reply_text(
+                "❌ Invalid format. Send 6 fields:\n"
+                "`Name | Duration | Price | Description | Note | Sticker Emoji ID`",
+                parse_mode='Markdown'
+            )
+            return ADMIN_ADD_PRODUCT
+
+        msg = admin.add_product_admin(
+            data[0],
+            data[1],
+            float(data[2]),
+            data[3],
+            data[4],
+            data[5]
+        )
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+
+        if msg.startswith("✅"):
+            product = find_recent_product_by_name(data[0])
+            await broadcast_to_all_users(
+                context,
+                product_update_message(
+                    "New Product Added!",
+                    product,
+                    [
+                        f"{ce('wallet')} Price: <b>{html_escape(str(data[2]))} USDT</b>",
+                        f"{ce('confirm')} Status: <b>Available Soon</b>",
+                    ]
+                ),
+                reply_markup=product_purchase_keyboard(product, "success"),
+                parse_mode='HTML'
+            )
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Error: {e}",
+            reply_markup=utils.admin_main_keyboard()
+        )
+
+    return ConversationHandler.END
+
+
+async def handle_admin_bulk_add_products(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    try:
+        products_data = admin.parse_bulk_products_format(update.message.text)
+        msg = admin.add_bulk_products_admin(products_data)
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+
+        if msg.startswith("✅"):
+            for product_data in products_data:
+                product = find_recent_product_by_name(product_data["name"])
+                await broadcast_to_all_users(
+                    context,
+                    product_update_message(
+                        "New Product Added!",
+                        product,
+                        [
+                            f"{ce('wallet')} Price: <b>{html_escape(str(product_data['price']))} USDT</b>",
+                            f"{ce('confirm')} Status: <b>Available Soon</b>",
+                        ]
+                    ),
+                    reply_markup=product_purchase_keyboard(product, "success"),
+                    parse_mode='HTML'
+                )
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Error: {e}",
+            reply_markup=utils.admin_main_keyboard()
+        )
+
+    return ConversationHandler.END
+
+
+async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    try:
+        stock_sections = admin.parse_stock_bulk_format(update.message.text)
+        msg = admin.add_stock_bulk_admin(stock_sections)
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+
+        if msg.startswith("📦"):
+            for product_id, items_data in stock_sections:
+                product = database.get_product(product_id)
+                if product:
+                    await broadcast_to_all_users(
+                        context,
+                        product_update_message(
+                            "Stock Updated!",
+                            product,
+                            [
+                                f"{ce('confirm')} New Stock Added: <b>{len(items_data)}</b>",
+                                f"{ce('box')} Available Now: <b>{product[4]}</b>",
+                            ]
+                        ),
+                        reply_markup=product_purchase_keyboard(product, "success"),
+                        parse_mode='HTML'
+                    )
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Error: {e}",
+            reply_markup=utils.admin_main_keyboard()
+        )
+
+    return ConversationHandler.END
+
+
+async def handle_admin_edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    try:
+        product_id, price = update.message.text.split()
+        product_before = database.get_product(int(product_id))
+        msg = admin.edit_product_price(int(product_id), float(price))
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+
+        if msg.startswith("✅") and product_before:
+            product = database.get_product(int(product_id))
+            await broadcast_to_all_users(
+                context,
+                product_update_message(
+                    "Price Updated!",
+                    product,
+                    [
+                        f"{ce('wallet')} New Price: <b>{html_escape(str(price))} USDT</b>",
+                    ]
+                ),
+                reply_markup=product_purchase_keyboard(product, "success"),
+                parse_mode='HTML'
+            )
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Error: {e}",
+            reply_markup=utils.admin_main_keyboard()
+        )
+
+    return ConversationHandler.END
+
+
+async def handle_admin_edit_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    try:
+        product_id, stock = update.message.text.split()
+        product_before = database.get_product(int(product_id))
+        msg = admin.edit_product_stock(int(product_id), int(stock))
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+
+        if msg.startswith("✅") and product_before:
+            product = database.get_product(int(product_id))
+            await broadcast_to_all_users(
+                context,
+                product_update_message(
+                    "Stock Updated!",
+                    product,
+                    [
+                        f"{ce('box')} Available Now: <b>{html_escape(str(stock))}</b>",
+                    ]
+                ),
+                reply_markup=product_purchase_keyboard(product, "success"),
+                parse_mode='HTML'
+            )
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Error: {e}",
+            reply_markup=utils.admin_main_keyboard()
+        )
+
+    return ConversationHandler.END
+
+
+async def handle_admin_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    try:
+        user_id, amount = update.message.text.split()
+        user_id = int(user_id)
+        amount = float(amount)
+
+        msg = admin.add_balance_admin(user_id, amount)
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"✅ Your wallet credited with *{amount} USDT*!",
+            parse_mode='Markdown'
+        )
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Error: {e}",
+            reply_markup=utils.admin_main_keyboard()
+        )
+
+    return ConversationHandler.END
+
+
+async def handle_admin_approve_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    try:
+        withdrawal_id = int(update.message.text)
+        withdrawal = database.get_withdrawal(withdrawal_id)
+
+        msg = admin.approve_withdrawal_admin(withdrawal_id)
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+
+        if withdrawal:
+            user_id = withdrawal[1]
+            amount = withdrawal[2]
+
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"✅ Your withdrawal request of *{amount} USDT* has been approved.",
+                parse_mode='Markdown'
+            )
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Error: {e}",
+            reply_markup=utils.admin_main_keyboard()
+        )
+
+    return ConversationHandler.END
+
+
+async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    msg_text = update.message.text
+    users = database.get_all_users()
+
+    sent = 0
+
+    for user in users:
+        try:
+            await context.bot.send_message(
+                chat_id=user[0],
+                text=msg_text
+            )
+            sent += 1
+        except Exception:
+            pass
+
+    await update.message.reply_text(
+        f"✅ Broadcast sent to {sent}/{len(users)} users.",
+        reply_markup=utils.admin_main_keyboard()
+    )
+
+    return ConversationHandler.END
+
+
+async def handle_admin_delete_product(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    try:
+        product_id = int(update.message.text)
+        msg = admin.delete_product_admin(product_id)
+
+        await update.message.reply_text(
+            msg,
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode='Markdown'
+        )
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Error: {e}",
+            reply_markup=utils.admin_main_keyboard()
+        )
+
+    return ConversationHandler.END
+
+
+# ══════════════════════════════════════════════════════════
+#   OLD ADMIN COMMANDS
+# ══════════════════════════════════════════════════════════
+
+async def cmd_addproduct_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not admin.is_admin(update.effective_user.id):
+        return
+
+    try:
+        data = update.message.text.replace('/addproduct_data ', '').split(' | ')
+
+        if len(data) != 6:
+            await update.message.reply_text(
+                "Usage: `/addproduct_data Name | Duration | Price | Description | Note | Sticker Emoji ID`",
+                parse_mode='Markdown'
+            )
+            return
+
+        msg = admin.add_product_admin(
+            data[0],
+            data[1],
+            float(data[2]),
+            data[3],
+            data[4],
+            data[5]
+        )
+
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def cmd_additems(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not admin.is_admin(update.effective_user.id):
+        return
+
+    try:
+        raw = update.message.text.replace('/additems ', '', 1)
+        stock_sections = admin.parse_stock_bulk_format(raw)
+
+        msg = admin.add_stock_bulk_admin(stock_sections)
+
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def cmd_editprice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not admin.is_admin(update.effective_user.id):
+        return
+
+    try:
+        msg = admin.edit_product_price(
+            int(context.args[0]),
+            float(context.args[1])
+        )
+
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    except Exception:
+        await update.message.reply_text(
+            "Usage: `/editprice <id> <price>`",
+            parse_mode='Markdown'
+        )
+
+
+async def cmd_editstock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not admin.is_admin(update.effective_user.id):
+        return
+
+    try:
+        msg = admin.edit_product_stock(
+            int(context.args[0]),
+            int(context.args[1])
+        )
+
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    except Exception:
+        await update.message.reply_text(
+            "Usage: `/editstock <id> <stock>`",
+            parse_mode='Markdown'
+        )
+
+
+async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not admin.is_admin(update.effective_user.id):
+        return
+
+    msg_text = update.message.text.replace('/broadcast ', '', 1)
+    users = database.get_all_users()
+
+    sent = 0
+
+    for user in users:
+        try:
+            await context.bot.send_message(
+                chat_id=user[0],
+                text=msg_text
+            )
+            sent += 1
+        except Exception:
+            pass
+
+    await update.message.reply_text(f"✅ Broadcast sent to {sent}/{len(users)} users.")
+
+
+async def cmd_addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not admin.is_admin(update.effective_user.id):
+        return
+
+    try:
+        uid = int(context.args[0])
+        amount = float(context.args[1])
+
+        msg = admin.add_balance_admin(uid, amount)
+
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+        await context.bot.send_message(
+            chat_id=uid,
+            text=f"✅ Your wallet credited with *{amount} USDT*!",
+            parse_mode='Markdown'
+        )
+
+    except Exception:
+        await update.message.reply_text(
+            "Usage: `/addbalance <user_id> <amount>`",
+            parse_mode='Markdown'
+        )
+
+
+async def cmd_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not admin.is_admin(update.effective_user.id):
+        return
+
+    try:
+        msg = admin.approve_withdrawal_admin(int(context.args[0]))
+
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    except Exception:
+        await update.message.reply_text(
+            "Usage: `/approve <withdrawal_id>`",
+            parse_mode='Markdown'
+        )
+
+
+# ══════════════════════════════════════════════════════════
+#   MAIN
+# ══════════════════════════════════════════════════════════
+
+def main() -> None:
+    application = ApplicationBuilder().token(config.TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("admin", admin_panel))
+
+    application.add_handler(CommandHandler("addproduct_data", cmd_addproduct_data))
+    application.add_handler(CommandHandler("additems", cmd_additems))
+    application.add_handler(CommandHandler("editprice", cmd_editprice))
+    application.add_handler(CommandHandler("editstock", cmd_editstock))
+    application.add_handler(CommandHandler("broadcast", cmd_broadcast))
+    application.add_handler(CommandHandler("addbalance", cmd_addbalance))
+    application.add_handler(CommandHandler("approve", cmd_approve))
+
+    reply_filter = (
+        filters.TEXT & ~filters.COMMAND &
+        filters.Regex(r'^(🛍️ Products|👤 Profile|📜 Purchase History|🔎 Order Details|💰 Wallet|🆘 Support)$')
+    )
+
+    application.add_handler(MessageHandler(reply_filter, reply_keyboard_handler))
+
+    conv_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(admin_button_handler, pattern='^admin_'),
+            CallbackQueryHandler(button_handler),
+        ],
+        states={
+            QUANTITY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_quantity)
+            ],
+            WITHDRAW_AMOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_withdraw_amount)
+            ],
+            WITHDRAW_ADDRESS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_withdraw_address)
+            ],
+            CONTACT_ADMIN: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_contact_admin)
+            ],
+            BINANCE_ORDER_ID: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_binance_order_id)
+            ],
+            ORDER_DETAILS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_order_details)
+            ],
+            ADMIN_ORDER_DETAILS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_order_details)
+            ],
+            ADMIN_ADD_PRODUCT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_add_product)
+            ],
+            ADMIN_BULK_ADD_PRODUCTS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_bulk_add_products)
+            ],
+            ADMIN_ADD_ITEMS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_add_items)
+            ],
+            ADMIN_EDIT_PRICE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_edit_price)
+            ],
+            ADMIN_EDIT_STOCK: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_edit_stock)
+            ],
+            ADMIN_ADD_BALANCE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_add_balance)
+            ],
+            ADMIN_APPROVE_WITHDRAWAL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_approve_withdrawal)
+            ],
+            ADMIN_BROADCAST: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_broadcast)
+            ],
+            ADMIN_DELETE_PRODUCT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_delete_product)
+            ],
+        },
+        fallbacks=[
+            CommandHandler('cancel', cancel),
+            CallbackQueryHandler(admin_button_handler, pattern='^admin_'),
+            CallbackQueryHandler(button_handler),
+        ],
+        per_message=False,
+        allow_reentry=True,
+    )
+
+    application.add_handler(conv_handler)
+
+    print("🤖 Bunny Tools Bot starting...")
+    application.run_polling(drop_pending_updates=True)
+
+
+if __name__ == '__main__':
+    main()
+
+----------------------
+
+Config.py
+------------------------
+
+import os
+
+TOKEN = os.getenv("TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
+BINANCE_WALLET_ADDRESS = os.getenv("BINANCE_WALLET_ADDRESS", "")
+BINANCE_NETWORK = os.getenv("BINANCE_NETWORK", "BEP-20")
+
+BINANCE_PAY_ID = os.getenv("BINANCE_PAY_ID", BINANCE_WALLET_ADDRESS)
+
+
+---------------------------
+databse.py
+---------------------------
+
+import sqlite3
+import datetime
+import json
+
+DATABASE_NAME = 'shop.db'
+
+
+def init_db():
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            username TEXT,
+            joined_date TEXT,
+            wallet_balance REAL DEFAULT 0.0,
+            total_orders INTEGER DEFAULT 0,
+            referrals INTEGER DEFAULT 0,
+            referral_earnings REAL DEFAULT 0.0
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            duration TEXT,
+            price REAL,
+            stock INTEGER,
+            rating REAL,
+            description TEXT,
+            features TEXT,
+            note TEXT,
+            emoji_id TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS orders (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER,
+            product_id INTEGER,
+            quantity INTEGER,
+            total_amount REAL,
+            payment_method TEXT,
+            status TEXT,
+            order_date TEXT,
+            delivery_details TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            type TEXT,
+            amount REAL,
+            transaction_date TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS unsold_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER,
+            email TEXT,
+            password TEXT,
+            item_data TEXT,
+            is_sold INTEGER DEFAULT 0,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS withdrawals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            amount REAL,
+            address TEXT,
+            status TEXT DEFAULT 'Pending',
+            request_date TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+
+    cursor.execute("PRAGMA table_info(unsold_items)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if "item_data" not in columns:
+        cursor.execute("ALTER TABLE unsold_items ADD COLUMN item_data TEXT")
+
+    cursor.execute("PRAGMA table_info(products)")
+    product_columns = [row[1] for row in cursor.fetchall()]
+    if "emoji_id" not in product_columns:
+        cursor.execute("ALTER TABLE products ADD COLUMN emoji_id TEXT")
+
+    conn.commit()
+    conn.close()
+
+
+def get_user(user_id):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    return user
+
+
+def create_user(user_id, username):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    joined_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(
+        'INSERT INTO users (id, username, joined_date) VALUES (?, ?, ?)',
+        (user_id, username, joined_date)
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_user_wallet(user_id, amount):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?',
+        (amount, user_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_all_users():
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users ORDER BY joined_date DESC')
+    users = cursor.fetchall()
+    conn.close()
+    return users
+
+
+def get_product(product_id):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM products WHERE id = ?', (product_id,))
+    product = cursor.fetchone()
+    conn.close()
+    return product
+
+
+def get_all_products():
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM products ORDER BY id DESC')
+    products = cursor.fetchall()
+    conn.close()
+    return products
+
+
+def add_product(name, duration, price, stock, rating, description, features, note, emoji_id=""):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        INSERT INTO products
+        (name, duration, price, stock, rating, description, features, note, emoji_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (
+            name,
+            duration,
+            price,
+            stock,
+            rating,
+            description,
+            json.dumps(features),
+            note,
+            str(emoji_id) if emoji_id else ""
+        )
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_product_stock(product_id, quantity_change):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE products SET stock = stock + ? WHERE id = ?',
+        (quantity_change, product_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_product_stock(product_id, new_stock):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE products SET stock = ? WHERE id = ?', (new_stock, product_id))
+    conn.commit()
+    conn.close()
+
+
+def set_product_price(product_id, new_price):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE products SET price = ? WHERE id = ?', (new_price, product_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_product(product_id):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM unsold_items WHERE product_id = ?', (product_id,))
+    cursor.execute('DELETE FROM products WHERE id = ?', (product_id,))
+    conn.commit()
+    conn.close()
+
+
+def create_order(order_id, user_id, product_id, quantity, total_amount, payment_method, status, delivery_details):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    order_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(
+        '''
+        INSERT INTO orders
+        (id, user_id, product_id, quantity, total_amount, payment_method, status, order_date, delivery_details)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (order_id, user_id, product_id, quantity, total_amount, payment_method, status, order_date, json.dumps(delivery_details))
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_order_by_id(order_id):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM orders WHERE id = ?', (order_id,))
+    order = cursor.fetchone()
+    conn.close()
+    return order
+
+
+def get_user_orders(user_id):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM orders WHERE user_id = ? ORDER BY order_date DESC', (user_id,))
+    orders = cursor.fetchall()
+    conn.close()
+    return orders
+
+
+def get_all_orders(limit=20):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM orders ORDER BY order_date DESC LIMIT ?', (limit,))
+    orders = cursor.fetchall()
+    conn.close()
+    return orders
+
+
+def add_transaction(user_id, tx_type, amount):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    transaction_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(
+        'INSERT INTO transactions (user_id, type, amount, transaction_date) VALUES (?, ?, ?, ?)',
+        (user_id, tx_type, amount, transaction_date)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_user_transactions(user_id):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM transactions WHERE user_id = ? ORDER BY transaction_date DESC', (user_id,))
+    transactions = cursor.fetchall()
+    conn.close()
+    return transactions
+
+
+def add_unsold_item(product_id, item_data, password=None):
+    if isinstance(item_data, dict):
+        data_dict = item_data
+        email_value = data_dict.get("email", "")
+        password_value = data_dict.get("password", "")
+    else:
+        data_dict = {"email": item_data, "password": password or ""}
+        email_value = item_data
+        password_value = password or ""
+
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO unsold_items (product_id, email, password, item_data) VALUES (?, ?, ?, ?)',
+        (product_id, email_value, password_value, json.dumps(data_dict))
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_unsold_items(product_id, quantity):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        SELECT id, email, password, item_data
+        FROM unsold_items
+        WHERE product_id = ? AND is_sold = 0
+        ORDER BY id ASC
+        LIMIT ?
+        ''',
+        (product_id, quantity)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    items = []
+    for row in rows:
+        item_id, email, password, item_data = row
+        if item_data:
+            try:
+                data = json.loads(item_data)
+            except Exception:
+                data = {"email": email, "password": password}
+        else:
+            data = {"email": email, "password": password}
+
+        items.append({"id": item_id, "data": data})
+
+    return items
+
+
+def mark_items_as_sold(product_id, item_ids):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    for item_id in item_ids:
+        cursor.execute(
+            'UPDATE unsold_items SET is_sold = 1 WHERE product_id = ? AND id = ? AND is_sold = 0',
+            (product_id, item_id)
+        )
+    conn.commit()
+    conn.close()
+
+
+def get_unsold_count(product_id):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM unsold_items WHERE product_id = ? AND is_sold = 0', (product_id,))
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+
+def create_withdrawal_request(user_id, amount, address):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    request_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(
+        'INSERT INTO withdrawals (user_id, amount, address, request_date) VALUES (?, ?, ?, ?)',
+        (user_id, amount, address, request_date)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_withdrawal(withdrawal_id):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM withdrawals WHERE id = ?', (withdrawal_id,))
+    withdrawal = cursor.fetchone()
+    conn.close()
+    return withdrawal
+
+
+def get_pending_withdrawals():
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM withdrawals WHERE status = "Pending" ORDER BY request_date DESC')
+    withdrawals = cursor.fetchall()
+    conn.close()
+    return withdrawals
+
+
+def update_withdrawal_status(withdrawal_id, status):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE withdrawals SET status = ? WHERE id = ?', (status, withdrawal_id))
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+
+---------------------------
+payments.py
+
+---------------------
+
+import config
+import database
+import time
+import json
+import hmac
+import hashlib
+import random
+import string
+import urllib.request
+import urllib.error
+from html import escape as html_escape
+
+
+EMOJIS = {
+    "cancel": "5210952531676504517",
+    "confirm": "5206607081334906820",
+    "binance": "6222208096257712941",
+}
+
+
+def tg(emoji_id, fallback):
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+def safe(value):
+    return html_escape(str(value)) if value is not None else ""
+
+
+def random_nonce(length=32):
+    chars = string.ascii_letters + string.digits
+    return "".join(random.choice(chars) for _ in range(length))
+
+
+def get_binance_account_id():
+    return getattr(config, "BINANCE_PAY_ID", "") or getattr(config, "BINANCE_WALLET_ADDRESS", "")
+
+
+def build_binance_pay_signature(timestamp, nonce, body):
+    payload = f"{timestamp}\n{nonce}\n{body}\n"
+    return hmac.new(
+        config.BINANCE_API_SECRET.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha512
+    ).hexdigest().upper()
+
+
+def query_binance_pay_order(binance_order_id):
+    if not config.BINANCE_API_KEY or not config.BINANCE_API_SECRET:
+        return False, "Binance API key/secret missing."
+
+    url = "https://bpay.binanceapi.com/binancepay/openapi/order/query"
+    body_dict = {"merchantTradeNo": str(binance_order_id)}
+    body = json.dumps(body_dict, separators=(",", ":"))
+
+    timestamp = str(int(time.time() * 1000))
+    nonce = random_nonce()
+    signature = build_binance_pay_signature(timestamp, nonce, body)
+
+    headers = {
+        "Content-Type": "application/json",
+        "BinancePay-Timestamp": timestamp,
+        "BinancePay-Nonce": nonce,
+        "BinancePay-Certificate-SN": config.BINANCE_API_KEY,
+        "BinancePay-Signature": signature,
+    }
+
+    request = urllib.request.Request(url, data=body.encode("utf-8"), headers=headers, method="POST")
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            raw = response.read().decode("utf-8")
+            return True, json.loads(raw)
+    except urllib.error.HTTPError as e:
+        try:
+            error_body = e.read().decode("utf-8")
+        except Exception:
+            error_body = str(e)
+        return False, f"Binance HTTP error: {error_body}"
+    except Exception as e:
+        return False, f"Binance API error: {e}"
+
+
+def verify_binance_order_id(binance_order_id, expected_amount):
+    ok, result = query_binance_pay_order(binance_order_id)
+
+    if not ok:
+        return False, str(result)
+
+    data = result.get("data") or {}
+    status = str(data.get("status") or data.get("orderStatus") or data.get("bizStatus") or "").upper()
+
+    paid_statuses = {"PAID", "SUCCESS", "COMPLETED", "PAY_SUCCESS"}
+
+    if status and status not in paid_statuses:
+        return False, f"Payment status is `{status}`."
+
+    amount_raw = data.get("orderAmount") or data.get("totalFee") or data.get("amount") or data.get("transactAmount") or 0
+
+    try:
+        paid_amount = float(amount_raw)
+        expected = float(expected_amount)
+        if paid_amount + 1e-9 < expected:
+            return False, f"Paid amount {paid_amount} is less than required {expected}."
+    except Exception:
+        pass
+
+    return True, "Payment verified successfully."
+
+
+def process_binance_payment(user_id, order_id, product_id, quantity, total_amount, binance_order_id=None):
+    if not binance_order_id:
+        return False, "Binance Order ID missing."
+
+    print(f"[Binance] Verifying Binance Order ID {binance_order_id}, user {user_id}, amount {total_amount} USDT")
+
+    success, msg = verify_binance_order_id(binance_order_id, total_amount)
+
+    if success:
+        database.add_transaction(user_id, "Binance Purchase", -float(total_amount))
+        return True, f"{tg(EMOJIS['confirm'], '✅')} Payment verified successfully."
+
+    return False, (
+        f"{tg(EMOJIS['cancel'], '❌')} <b>Payment not verified.</b>\n\n"
+        f"Reason: {safe(msg)}\n\n"
+        f"Please check your Binance Order ID or contact support."
+    )
+
+
+def process_wallet_payment(user_id, order_id, product_id, quantity, total_amount):
+    user = database.get_user(user_id)
+    if not user:
+        return False, "User not found."
+
+    current_balance = user[3]
+
+    if current_balance >= total_amount:
+        database.update_user_wallet(user_id, -total_amount)
+        database.add_transaction(user_id, "Purchase", -total_amount)
+        return True, "Payment successful using wallet."
+
+    required = round(total_amount - current_balance, 4)
+    return False, (
+        f"{tg(EMOJIS['cancel'], '❌')} <b>Insufficient Balance</b>\n\n"
+        f"Your Balance: {safe(current_balance)} USDT\n"
+        f"Required: {safe(total_amount)} USDT\n"
+        f"Short by: {safe(required)} USDT"
+    )
+
+
+def get_binance_payment_details(total_amount):
+    binance_id = get_binance_account_id()
+
+    return (
+        f"{tg(EMOJIS['binance'], '💳')} <b>Binance Payment</b>\n\n"
+        f"Send exactly: <b>{safe(total_amount)} USDT</b>\n\n"
+        f"{tg(EMOJIS['binance'], '💳')} <b>Binance ID:</b>\n"
+        f"<code>{safe(binance_id)}</code>\n\n"
+        f"After sending payment, click the button below.\n"
+        f"Then send your <b>Binance Order ID / Transaction ID</b> for verification.\n\n"
+        f"━━━━━━━━━━━━━━━━━━"
+    )
+
+
+def get_wallet_payment_summary(user_id, total_amount):
+    user = database.get_user(user_id)
+    if not user:
+        return "Error: User not found."
+
+    current_balance = user[3]
+    status = (
+        f"{tg(EMOJIS['confirm'], '✅')} Sufficient"
+        if current_balance >= total_amount
+        else f"{tg(EMOJIS['cancel'], '❌')} Insufficient"
+    )
+
+    return (
+        f"👛 <b>Wallet Payment</b>\n\n"
+        f"Your Balance: <b>{safe(current_balance)} USDT</b>\n"
+        f"Total Amount: <b>{safe(total_amount)} USDT</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"Balance Status: <b>{status}</b>"
+    )
+
+
+-----------------------
+products.py
+
+-------------------------
+
+import database
+from html import escape as html_escape
+
+
+def tg(emoji_id, fallback):
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+# Custom emoji IDs
+EMOJIS = {
+    "product": "5231012545799666522",      # 📦
+    "wallet": "5409048419211682843",       # 💰
+    "date": "5413879192267805083",         # 📅
+    "sticker": "5406745015365943482",      # 🧩
+    "confirm": "5206607081334906820",      # ✅
+    "warning": "5210952531676504517",      # ⚠️ / ❌ style
+    "description": "5282843764451195532",  # 📖
+}
+
+
+def safe(value):
+    return html_escape(str(value)) if value is not None else ""
+
+
+def get_product_icon(emoji_id):
+    """
+    Product ka apna saved custom emoji ID use karega.
+    Agar database mein empty/None hai to default product emoji use karega.
+    """
+    if emoji_id and str(emoji_id).strip() and str(emoji_id).strip().lower() != "none":
+        return tg(str(emoji_id).strip(), "📦")
+
+    return tg(EMOJIS["product"], "📦")
+
+
+def get_product_details_message(product_id):
+    product = database.get_product(product_id)
+
+    if not product:
+        return "Product not found."
+
+    # Current database product tuple:
+    # 0 id, 1 name, 2 duration, 3 price, 4 stock,
+    # 5 rating, 6 description, 7 features_json, 8 note, 9 emoji_id
+    #
+    # Rating aur Features ab display/use nahi honge.
+    if len(product) > 9:
+        pid = product[0]
+        name = product[1]
+        duration = product[2]
+        price = product[3]
+        stock = product[4]
+        description = product[6]
+        note = product[8]
+        emoji_id = product[9]
+    else:
+        # Fallback support agar future mein database compact format ho:
+        # id, name, duration, price, stock, description, note, emoji_id
+        pid, name, duration, price, stock, description, note, emoji_id = (
+            product if len(product) >= 8 else (*product, "", "", "")
+        )
+
+    product_icon = get_product_icon(emoji_id)
+
+    message = (
+        f"{product_icon} <b>Product Details</b>\n\n"
+
+        f"{product_icon} <b>Name:</b> {safe(name)}\n"
+        f"{tg(EMOJIS['date'], '📅')} <b>Duration:</b> {safe(duration)}\n"
+        f"{tg(EMOJIS['wallet'], '💰')} <b>Price:</b> {safe(price)} USDT\n"
+        f"{tg(EMOJIS['product'], '📦')} <b>Stock Available:</b> {safe(stock)}\n\n"
+
+        f"{tg(EMOJIS['description'], '📖')} <b>Description:</b>\n"
+        f"{safe(description)}\n\n"
+
+        f"⚠️ <b>Note:</b>\n"
+        f"{safe(note)}\n\n"
+
+        f"━━━━━━━━━━━━━━━━━━"
+    )
+
+    return message
+
+
+----------------------------
+utils.py
+----------------------------
+
+import uuid
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+
+EMOJIS = {
+    "products": "5456140674028019486",
+    "purchase_history": "5210956306952758910",
+    "profile": "5253742260054409879",
+    "support": "5443038326535759644",
+    "wallet": "5409048419211682843",
+    "order_details": "5282843764451195532",
+    "welcome_star": "5325547803936572038",
+    "choose_option": "5406745015365943482",
+    "deposit": "5397916757333654639",
+    "withdraw": "5402186569006210455",
+    "back": "5416117059207572332",
+    "confirm": "5206607081334906820",
+    "cancel": "5210952531676504517",
+    "order": "5406683434124859552",
+    "faq": "5314504236132747481",
+    "announcement": "5395695537687123235",
+    "edit_stock": "5451882707875276247",
+    "delete": "5445267414562389170",
+    "broadcast": "5424818078833715060",
+    "stats": "5231200819986047254",
+    "view_products": "5231012545799666522",
+}
+
+def generate_order_id():
+    return "ORD" + str(uuid.uuid4())[:8].upper()
+
+
+def btn(text, callback_data=None, url=None, style="default", emoji_id=None):
+    api_kwargs = {}
+
+    if emoji_id:
+        api_kwargs["icon_custom_emoji_id"] = str(emoji_id)
+
+    if url:
+        return InlineKeyboardButton(
+            text=text,
+            url=url,
+            style=style,
+            api_kwargs=api_kwargs
+        )
+
+    return InlineKeyboardButton(
+        text=text,
+        callback_data=callback_data,
+        style=style,
+        api_kwargs=api_kwargs
+    )
+
+
+def back_btn(text="Back", callback_data="main_menu", style="primary"):
+    return btn(
+        text,
+        callback_data=callback_data,
+        style=style,
+        emoji_id=EMOJIS["back"]
+    )
+
+
+def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
+    menu = [buttons[i:i + n_cols] for i in range(0, len(buttons), n_cols)]
+
+    if header_buttons:
+        menu.insert(0, header_buttons)
+
+    if footer_buttons:
+        menu.append(footer_buttons)
+
+    return InlineKeyboardMarkup(menu)
+
+
+# ─── USER KEYBOARDS ───────────────────────────────────────
+
+def main_menu_keyboard():
+    keyboard = [
+        [
+            btn(
+                "Products",
+                callback_data='products',
+                style="success",
+                emoji_id=EMOJIS["products"]
+            )
+        ],
+        [
+            btn(
+                "Profile",
+                callback_data='profile',
+                style="primary",
+                emoji_id=EMOJIS["profile"]
+            ),
+            btn(
+                "Purchase History",
+                callback_data='purchase_history',
+                style="danger",
+                emoji_id=EMOJIS["purchase_history"]
+            ),
+        ],
+        [
+            btn(
+                "Wallet",
+                callback_data='wallet',
+                style="success",
+                emoji_id=EMOJIS["wallet"]
+            ),
+            btn(
+                "Support",
+                callback_data='support',
+                style="danger",
+                emoji_id=EMOJIS["support"]
+            ),
+        ],
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+def products_list_keyboard(products):
+    buttons = []
+
+    for p in products:
+        product_id = p[0]
+        product_name = p[1]
+        price = p[3]
+        stock = p[4]
+        product_emoji_id = p[9] if len(p) > 9 and p[9] else None
+
+        # Format: Sticker icon + title + price$ + stock in brackets
+        # Sticker icon comes from icon_custom_emoji_id, not text.
+        text = f"{product_name}  {price}$  ({stock})"
+        style = "success" if stock and stock > 0 else "danger"
+
+        buttons.append(
+            btn(
+                text,
+                callback_data=f'product_{product_id}',
+                style=style,
+                emoji_id=product_emoji_id or EMOJIS["products"]
+            )
+        )
+
+    buttons.append(back_btn("Back to Main Menu", callback_data='main_menu'))
+    return build_menu(buttons, n_cols=1)
+
+def product_details_keyboard():
+    buttons = [
+        btn("Order Now", callback_data='order_now', style="success", emoji_id=EMOJIS["order"]),
+        back_btn("Back to Products", callback_data='products', style="danger"),
+    ]
+    return build_menu(buttons, n_cols=1)
+
+
+def quantity_selection_keyboard():
+    buttons = [back_btn("Back to Product", callback_data='back_to_product_details', style="danger")]
+    return build_menu(buttons, n_cols=1)
+
+
+def payment_method_keyboard():
+    buttons = [
+        btn("💳 Pay with Binance", callback_data='pay_binance', style="primary"),
+        btn("Pay with Wallet", callback_data='pay_wallet', style="success", emoji_id=EMOJIS["wallet"]),
+        back_btn("Back to Quantity", callback_data='back_to_quantity', style="danger"),
+    ]
+    return build_menu(buttons, n_cols=1)
+
+
+def binance_payment_keyboard():
+    buttons = [
+        btn("I have sent the payment", callback_data='check_binance_payment', style="success", emoji_id=EMOJIS["confirm"]),
+        btn("Cancel Order", callback_data='cancel_order', style="danger", emoji_id=EMOJIS["cancel"]),
+    ]
+    return build_menu(buttons, n_cols=1)
+
+
+def wallet_payment_keyboard():
+    buttons = [
+        btn("Confirm & Pay", callback_data='confirm_wallet_payment', style="success", emoji_id=EMOJIS["confirm"]),
+        btn("Cancel", callback_data='cancel_order', style="danger", emoji_id=EMOJIS["cancel"]),
+    ]
+    return build_menu(buttons, n_cols=1)
+
+
+def insufficient_balance_keyboard():
+    buttons = [back_btn("Back to Payment", callback_data='back_to_payment_method', style="danger")]
+    return build_menu(buttons, n_cols=1)
+
+
+def order_confirmed_keyboard():
+    buttons = [
+        btn("Order Details", callback_data='order_details', style="primary", emoji_id=EMOJIS["order_details"]),
+        back_btn("Back to Main Menu", callback_data='main_menu'),
+    ]
+    return build_menu(buttons, n_cols=1)
+
+
+def wallet_options_keyboard():
+    buttons = [
+        btn("Deposit", callback_data='deposit_wallet', style="success", emoji_id=EMOJIS["deposit"]),
+    ]
+    return build_menu(buttons, n_cols=2, footer_buttons=[back_btn("Back", callback_data='main_menu')])
+
+
+def deposit_wallet_keyboard():
+    buttons = [
+        btn("I have sent the payment", callback_data='check_deposit_payment', style="success", emoji_id=EMOJIS["confirm"]),
+        back_btn("Back", callback_data='wallet', style="danger"),
+    ]
+    return build_menu(buttons, n_cols=1)
+
+
+def support_keyboard():
+    buttons = [
+        btn("FAQ", callback_data='faq', style="primary", emoji_id=EMOJIS["faq"]),
+        btn(
+    "Contact Support",
+    url="https://t.me/Bunnyhaccks",
+    style="success",
+    emoji_id=EMOJIS["support"]
+),
+        btn("Announcements", url='https://t.me/bunnyhackss', style="primary", emoji_id=EMOJIS["announcement"]),
+        back_btn("Back", callback_data='main_menu', style="danger"),
+    ]
+    return build_menu(buttons, n_cols=1)
+
+
+
+def product_update_purchase_keyboard(product, style="success"):
+    """
+    Auto announcement/update message ke liye sirf specific product ka single colored button.
+    """
+    if not product:
+        return None
+
+    product_id = product[0]
+    product_name = product[1]
+    product_emoji_id = product[9] if len(product) > 9 and product[9] else None
+
+    keyboard = [
+        [
+            btn(
+                f"Buy {product_name}",
+                callback_data=f"product_{product_id}",
+                style=style,
+                emoji_id=product_emoji_id or EMOJIS["products"]
+            )
+        ]
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+# ─── ADMIN KEYBOARDS ──────────────────────────────────────
+
+def admin_main_keyboard():
+    buttons = [
+        btn("Add Product", callback_data='admin_add_product', style="success", emoji_id=EMOJIS["deposit"]),
+        btn("Bulk Products", callback_data='admin_bulk_add_products', style="success", emoji_id=EMOJIS["deposit"]),
+        btn("Add Stock/Items", callback_data='admin_add_items', style="primary", emoji_id=EMOJIS["view_products"]),
+        btn("Edit Price", callback_data='admin_edit_price', style="primary", emoji_id=EMOJIS["wallet"]),
+        btn("Edit Stock", callback_data='admin_edit_stock', style="primary", emoji_id=EMOJIS["edit_stock"]),
+        btn("Add Balance", callback_data='admin_add_balance', style="success", emoji_id=EMOJIS["deposit"]),
+        btn("Approve Withdrawal", callback_data='admin_approve_withdrawal', style="success", emoji_id=EMOJIS["confirm"]),
+        btn("Broadcast", callback_data='admin_broadcast', style="danger", emoji_id=EMOJIS["broadcast"]),
+        btn("Delete Product", callback_data='admin_delete_product', style="danger", emoji_id=EMOJIS["delete"]),
+        btn("Order Details", callback_data='admin_order_details', style="primary", emoji_id=EMOJIS["order_details"]),
+        btn("View Products", callback_data='admin_view_products', style="primary", emoji_id=EMOJIS["view_products"]),
+        btn("All Orders", callback_data='admin_view_all_orders', style="primary", emoji_id=EMOJIS["order"]),
+        btn("Withdrawals", callback_data='admin_withdraw_requests', style="danger", emoji_id=EMOJIS["withdraw"]),
+        btn("Stats", callback_data='admin_view_stats', style="success", emoji_id=EMOJIS["stats"]),
+    ]
+    return build_menu(buttons, n_cols=2)
+
+
+def admin_back_keyboard():
+    buttons = [back_btn("Back to Admin Panel", callback_data='admin_panel_back')]
+    return build_menu(buttons, n_cols=1)
+
+
+def admin_cancel_keyboard():
+    buttons = [back_btn("Cancel", callback_data='admin_panel_back', style="danger")]
+    return build_menu(buttons, n_cols=1)
+
+
+----------------------------

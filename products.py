@@ -39,26 +39,19 @@ def get_product_details_message(product_id):
     if not product:
         return "Product not found."
 
-    # Current database product tuple:
+    # Current database product tuple (PostgreSQL):
     # 0 id, 1 name, 2 duration, 3 price, 4 stock,
-    # 5 rating, 6 description, 7 features_json, 8 note, 9 emoji_id
-    #
-    # Rating aur Features ab display/use nahi honge.
-    if len(product) > 9:
-        pid = product[0]
-        name = product[1]
-        duration = product[2]
-        price = product[3]
-        stock = product[4]
-        description = product[6]
-        note = product[8]
-        emoji_id = product[9]
-    else:
-        # Fallback support agar future mein database compact format ho:
-        # id, name, duration, price, stock, description, note, emoji_id
-        pid, name, duration, price, stock, description, note, emoji_id = (
-            product if len(product) >= 8 else (*product, "", "", "")
-        )
+    # 5 rating, 6 description, 7 features_json, 8 note, 9 emoji_id, 10 is_freebie
+    
+    pid = product[0]
+    name = product[1]
+    duration = product[2]
+    price = product[3]
+    stock = product[4]
+    description = product[6]
+    note = product[8]
+    emoji_id = product[9]
+    is_freebie = product[10] if len(product) > 10 else False
 
     product_icon = get_product_icon(emoji_id)
 
@@ -80,3 +73,4 @@ def get_product_details_message(product_id):
     )
 
     return message
+

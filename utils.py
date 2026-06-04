@@ -83,6 +83,12 @@ def main_menu_keyboard():
                 callback_data='products',
                 style="success",
                 emoji_id=EMOJIS["products"]
+            ),
+            btn(
+                "Freebies 🎁",
+                callback_data='freebies',
+                style="success",
+                emoji_id=EMOJIS["welcome_star"]
             )
         ],
         [
@@ -268,9 +274,47 @@ def admin_main_keyboard():
         btn("View Products", callback_data='admin_view_products', style="primary", emoji_id=EMOJIS["view_products"]),
         btn("All Orders", callback_data='admin_view_all_orders', style="primary", emoji_id=EMOJIS["order"]),
         btn("Withdrawals", callback_data='admin_withdraw_requests', style="danger", emoji_id=EMOJIS["withdraw"]),
+        btn("Freebies Settings", callback_data='admin_freebies_settings', style="success", emoji_id=EMOJIS["welcome_star"]),
+        btn("Freebie Products", callback_data='admin_freebie_products', style="success", emoji_id=EMOJIS["products"]),
         btn("Stats", callback_data='admin_view_stats', style="success", emoji_id=EMOJIS["stats"]),
     ]
     return build_menu(buttons, n_cols=2)
+
+def freebies_keyboard(products, config_data):
+    buttons = []
+    
+    # Add join channel button if link is provided
+    if config_data[2]:
+        buttons.append(btn("Join Channel 📢", url=config_data[2], style="success", emoji_id=EMOJIS["announcement"]))
+        
+    for p in products:
+        product_id = p[0]
+        product_name = p[1]
+        stock = p[4]
+        product_emoji_id = p[9] if len(p) > 9 and p[9] else None
+        
+        text = f"Claim {product_name} ({stock})"
+        style = "success" if stock > 0 else "danger"
+        
+        buttons.append(
+            btn(
+                text,
+                callback_data=f'claim_freebie_{product_id}',
+                style=style,
+                emoji_id=product_emoji_id or EMOJIS["products"]
+            )
+        )
+        
+    buttons.append(back_btn("Back", callback_data='main_menu'))
+    return build_menu(buttons, n_cols=1)
+
+def freebies_admin_keyboard():
+    buttons = [
+        btn("Setup Channel", callback_data='admin_setup_freebies', style="primary", emoji_id=EMOJIS["announcement"]),
+        btn("Manage Products", callback_data='admin_manage_freebies', style="primary", emoji_id=EMOJIS["products"]),
+        back_btn("Back", callback_data='admin_panel_back', style="danger")
+    ]
+    return build_menu(buttons, n_cols=1)
 
 
 def admin_back_keyboard():
@@ -281,3 +325,4 @@ def admin_back_keyboard():
 def admin_cancel_keyboard():
     buttons = [back_btn("Cancel", callback_data='admin_panel_back', style="danger")]
     return build_menu(buttons, n_cols=1)
+

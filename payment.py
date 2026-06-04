@@ -131,11 +131,11 @@ def process_wallet_payment(user_id, order_id, product_id, quantity, total_amount
     if not user:
         return False, "User not found."
 
-    current_balance = user[3]
+    current_balance = float(user[3])
 
-    if current_balance >= total_amount:
-        database.update_user_wallet(user_id, -total_amount)
-        database.add_transaction(user_id, "Purchase", -total_amount)
+    if current_balance >= float(total_amount):
+        database.update_user_wallet(user_id, -float(total_amount))
+        database.add_transaction(user_id, "Purchase", -float(total_amount))
         return True, "Payment successful using wallet."
 
     required = round(total_amount - current_balance, 4)
@@ -180,3 +180,4 @@ def get_wallet_payment_summary(user_id, total_amount):
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"Balance Status: <b>{status}</b>"
     )
+
