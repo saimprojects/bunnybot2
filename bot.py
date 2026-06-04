@@ -48,13 +48,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# Default fallback custom emoji used inside <tg-emoji> tags.
+# Telegram requires a real emoji character inside the tag; we use a
+# custom emoji with a known-good ID so the tag is always valid.
+_FALLBACK_EMOJI_ID = "5325547803936572038"
+_FALLBACK_EMOJI_CHAR = f'<tg-emoji emoji-id="{_FALLBACK_EMOJI_ID}">⭐</tg-emoji>'
 
-def ce(name: str, fallback: str = " ") -> str:
-    """Return Telegram custom emoji tag for a key from utils.EMOJIS."""
+
+def ce(name: str, fallback: str = None) -> str:
+    """Return a Telegram custom emoji tag for a logical name.
+
+    Looks up *name* in ``utils.EMOJIS``.  If found, wraps the emoji
+    ID in a ``<tg-emoji>`` tag using the same ID as both the
+    ``emoji-id`` attribute and as the inner fallback custom emoji so
+    that Telegram always sees a valid entity.
+
+    If the key is missing the function returns either *fallback* (if
+    supplied) or the default fallback custom emoji tag so the message
+    is still valid HTML.
+    """
     emoji_id = getattr(utils, "EMOJIS", {}).get(name, "")
     if not emoji_id:
-        return fallback
-    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+        # Return caller-supplied fallback or the default custom emoji tag
+        return fallback if fallback is not None else _FALLBACK_EMOJI_CHAR
+    # Use the emoji's own ID as the inner character reference so
+    # Telegram accepts the entity without complaining about plain text
+    # inside the tag.
+    return f'<tg-emoji emoji-id="{emoji_id}"><tg-emoji emoji-id="{_FALLBACK_EMOJI_ID}">⭐</tg-emoji></tg-emoji>'
 
 
 # Conversation state for admin input
@@ -136,10 +156,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_html(details, reply_markup=kb)
         return
     if data == 'order_now':
-        # For simplicity we allow only quantity 1 orders.  In a full
-        # implementation you would ask the user for quantity and
-        # payment method.  Here we show a message that ordering is
-        # disabled for now and return to main menu.
         await query.message.reply_html(
             f"{ce('cancel')} Ordering is currently disabled in this demo.",
             reply_markup=utils.main_menu_keyboard()
@@ -168,9 +184,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             try:
                 member = await context.bot.get_chat_member(f"@{free_channel}", user_id)
                 if member.status not in ('member', 'creator', 'administrator'):
-                    # not a member
                     join_link = f"https://t.me/{free_channel}"
-                    # Provide a button for user to re‑try after joining
                     join_kb = utils.build_menu([
                         utils.btn("I have joined", callback_data='claim_free', emoji_id=utils.EMOJIS['confirm'])
                     ], n_cols=1)
@@ -181,7 +195,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     return
             except Exception as e:
                 logger.warning("Error checking channel membership: %s", e)
-                # If we cannot verify membership we still proceed to deliver
                 pass
         # Deliver free item
         items = database.get_unsold_items(pid, limit=1)
@@ -213,7 +226,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_html(
             f"{ce('confirm')} <b>Your free product has been delivered!</b>\n\n{details_msg}"
         )
-        # Send a new start prompt
         await query.message.reply_html("Use /start to return to the main menu.")
         return
     if data == 'purchase_history':
@@ -245,9 +257,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         _, username, joined_date, wallet_balance, total_orders, referrals, referral_earnings = user
         msg = (
             f"{ce('profile')} <b>Your Profile</b>\n\n"
-            f"{ce('id')} <b>ID:</b> {user_id}\n"
-            f"{ce('username')} <b>Username:</b> @{html_escape(username) if username else 'N/A'}\n"
-            f"{ce('date')} <b>Joined:</b> {joined_date}\n"
+            f"{ce('id', '🆔')} <b>ID:</b> {user_id}\n"
+            f"{ce('username', '👤')} <b>Username:</b> @{html_escape(username) if username else 'N/A'}\n"
+            f"{ce('date', '📅')} <b>Joined:</b> {joined_date}\n"
             f"{ce('wallet')} <b>Balance:</b> {wallet_balance} USDT\n"
             f"{ce('order')} <b>Total Orders:</b> {total_orders}\n"
             f"🎁 <b>Referrals:</b> {referrals}\n"
@@ -281,7 +293,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_html("Admin panel:", reply_markup=utils.admin_main_keyboard())
         return
     if data.startswith('admin'):
-        # Ensure user is admin
         if not admin_module.is_admin(user_id):
             await query.message.reply_html("❌ You are not authorized to access admin functions.")
             return
@@ -316,11 +327,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 reply_markup=utils.admin_cancel_keyboard()
             )
             return
-        # Unknown admin action
         await query.message.reply_html("Unknown admin action.", reply_markup=utils.admin_main_keyboard())
         return
 
-    # Fallback: unhandled callback
+    # Fallback
     await query.message.reply_html("Unknown action.")
 
 
@@ -350,7 +360,6 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             ch = parts[1]
             if ch.lower() != 'none':
                 channel = ch.lstrip('@')
-        # If only product ID provided and no channel specified -> unset freebie
         if len(parts) == 1:
             result = admin_module.unset_freebie(pid)
         else:
@@ -359,7 +368,6 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data['awaiting_admin_input'] = False
         return ConversationHandler.END
     if action == 'broadcast':
-        # Parse custom emoji markup
         raw_msg = text
         msg = product_module.format_with_custom_emojis(raw_msg)
         users = database.get_all_users()
@@ -377,7 +385,6 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         context.user_data['awaiting_admin_input'] = False
         return ConversationHandler.END
-    # Unknown admin action
     context.user_data['awaiting_admin_input'] = False
     return ConversationHandler.END
 
@@ -402,20 +409,14 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         pass
 
 
-
 def main() -> None:
     init_environment()
     if not config.TOKEN:
         raise RuntimeError("TOKEN is not set in environment")
     application = ApplicationBuilder().token(config.TOKEN).build()
 
-    # Start command
     application.add_handler(CommandHandler('start', start))
-    # Callback queries
     application.add_handler(CallbackQueryHandler(handle_callback))
-
-    # Admin text input handler.
-    # Admin check is inside handle_admin_input(), so no filters.USER() is needed.
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_input))
     application.add_error_handler(error_handler)
 
