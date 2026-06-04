@@ -1,11 +1,2 @@
-anyio
-certifi
-h11
-httpcore
+python-telegram-bot==22.7
 httpx
-idna
-python-telegram-bot==21.10
-socksio
-psycopg2-binary
-requests
-python-dotenv
