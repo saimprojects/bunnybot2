@@ -15,6 +15,7 @@ import admin
 import utils
 import payment
 
+# Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -229,7 +230,10 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=
     if not user:
         text = "Profile not found."
     else:
-        bot_username = (await context.bot.get_me()).username
+        try:
+            bot_username = (await context.bot.get_me()).username
+        except:
+            bot_username = "bot"
         username = html_escape(user[1] if user[1] else "Unknown")
         joined = html_escape(str(user[2]))
 
@@ -256,7 +260,10 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=
             parse_mode='HTML'
         )
     else:
-        await update.message.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
+        if update.callback_query:
+            await update.callback_query.message.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
+        else:
+            await update.message.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
 
 
 async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -289,7 +296,10 @@ async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode='HTML'
         )
     else:
-        await update.message.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
+        if update.callback_query:
+             await update.callback_query.message.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
+        else:
+            await update.message.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
 
 
 def build_wallet_message(user, transactions):
@@ -338,9 +348,11 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer()
     data = query.data
     user_id = update.effective_user.id
+
+    # Always answer to stop loading state
+    await query.answer()
 
     if data == 'main_menu':
         await start(update, context)
@@ -498,7 +510,10 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     if not admin.is_admin(update.effective_user.id): return ConversationHandler.END
+    
+    # Always answer to stop loading state
     await query.answer()
+    
     data = query.data
     
     if data == 'admin_panel_back':
@@ -684,21 +699,24 @@ async def handle_admin_order_details(update: Update, context: ContextTypes.DEFAU
         f"Quantity: {order[3]}\n"
         f"Amount: {order[4]} USDT\n"
         f"Status: {order[6]}\n"
-        f"Date: {order[7]}\n"
+        f"Date: {order[7]}\n\n"
+        f"<b>Delivery Data:</b>\n"
     )
+    delivery_data = json.loads(order[8])
+    for i, data in enumerate(delivery_data, 1):
+        text += f"\n<b>Item #{i}:</b>\n{format_item_data_for_delivery(data)}\n"
+        
     await update.message.reply_text(text, parse_mode='HTML', reply_markup=utils.admin_main_keyboard())
     return ConversationHandler.END
 
-
 async def handle_admin_add_product(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        f = update.message.text.split(' | ')
-        res = admin.add_product_admin(f[0], f[1], float(f[2]), f[3], f[4], f[5])
+        data = admin.parse_product_block(update.message.text)
+        res = admin.add_product_admin(data['name'], data['duration'], data['price'], data['description'], data['note'], data['emoji_id'])
         await update.message.reply_text(res, parse_mode='Markdown', reply_markup=utils.admin_main_keyboard())
-    except:
-        await update.message.reply_text("❌ Invalid format.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
     return ConversationHandler.END
-
 
 async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
@@ -709,36 +727,32 @@ async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(f"❌ Error: {e}")
     return ConversationHandler.END
 
-
 async def handle_admin_edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        f = update.message.text.split(' | ')
-        res = admin.edit_product_price(int(f[0]), float(f[1]))
+        pid, price = update.message.text.split(' | ')
+        res = admin.edit_product_price(int(pid), float(price))
         await update.message.reply_text(res, reply_markup=utils.admin_main_keyboard())
     except:
-        await update.message.reply_text("❌ Invalid format.")
+        await update.message.reply_text("❌ Error. Format: `Product_ID | New_Price`")
     return ConversationHandler.END
-
 
 async def handle_admin_edit_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        f = update.message.text.split(' | ')
-        res = admin.edit_product_stock(int(f[0]), int(f[1]))
+        pid, stock = update.message.text.split(' | ')
+        res = admin.edit_product_stock(int(pid), int(stock))
         await update.message.reply_text(res, reply_markup=utils.admin_main_keyboard())
     except:
-        await update.message.reply_text("❌ Invalid format.")
+        await update.message.reply_text("❌ Error. Format: `Product_ID | New_Stock`")
     return ConversationHandler.END
-
 
 async def handle_admin_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        f = update.message.text.split(' | ')
-        res = admin.add_balance_admin(int(f[0]), float(f[1]))
+        uid, amount = update.message.text.split(' | ')
+        res = admin.add_balance_admin(int(uid), float(amount))
         await update.message.reply_text(res, reply_markup=utils.admin_main_keyboard())
     except:
-        await update.message.reply_text("❌ Invalid format.")
+        await update.message.reply_text("❌ Error. Format: `User_ID | Amount`")
     return ConversationHandler.END
-
 
 async def handle_admin_approve_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
@@ -747,7 +761,6 @@ async def handle_admin_approve_withdrawal(update: Update, context: ContextTypes.
     except:
         await update.message.reply_text("❌ Error.")
     return ConversationHandler.END
-
 
 async def handle_admin_delete_product(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
@@ -810,6 +823,8 @@ def main():
     database.init_db()
     app = ApplicationBuilder().token(config.TOKEN).build()
     
+    # Define ConversationHandler with per_message=False to avoid tracking warnings
+    # and improve callback processing.
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler('start', start),
@@ -835,13 +850,17 @@ def main():
             ADMIN_TOGGLE_FREEBIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_toggle_freebie)],
         },
         fallbacks=[CommandHandler('start', start)],
+        per_message=False
     )
     
     app.add_handler(CommandHandler('admin', admin_panel))
     app.add_handler(conv_handler)
     
     print("Bot started...")
-    app.run_polling()
+    
+    # Use drop_pending_updates=True to avoid 409 Conflict if multiple instances start
+    # and to clear old updates that might cause button "stuck" behavior.
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
     main()
