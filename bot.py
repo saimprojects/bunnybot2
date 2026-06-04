@@ -433,17 +433,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif data.startswith('product_'):
         pid = int(data.split('_')[1])
         product = database.get_product(pid)
+        if not product:
+            await query.answer("❌ Product not found.", show_alert=True)
+            return ConversationHandler.END
         context.user_data['current_product_id'] = pid
         text = f"🛍️ <b>{html_escape(product[1])}</b>\n\nPrice: <b>{product[3]} USDT</b>\nStock: <b>{product[4]}</b>\n\nDescription:\n{product[6]}\n\nNote: {product[8]}"
         await query.edit_message_text(text=text, reply_markup=utils.product_details_keyboard(), parse_mode='HTML')
         return ConversationHandler.END
     elif data == 'order_now':
+        pid = context.user_data.get('current_product_id')
+        product = database.get_product(pid)
+        if not product or product[4] <= 0:
+            await query.answer("❌ Out of stock or product not found.", show_alert=True)
+            return ConversationHandler.END
         await query.edit_message_text("🔢 Please send the quantity you want to buy:", reply_markup=utils.quantity_selection_keyboard())
         return QUANTITY
     elif data == 'pay_binance':
         pid = context.user_data.get('current_product_id')
         qty = context.user_data.get('quantity')
         product = database.get_product(pid)
+        if not product:
+            await query.answer("❌ Product not found.", show_alert=True)
+            return ConversationHandler.END
         total = product[3] * qty
         context.user_data['total_amount'] = total
         await query.edit_message_text(payment.get_binance_payment_details(total), reply_markup=utils.binance_payment_keyboard(), parse_mode='HTML')
@@ -452,6 +463,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         pid = context.user_data.get('current_product_id')
         qty = context.user_data.get('quantity')
         product = database.get_product(pid)
+        if not product:
+            await query.answer("❌ Product not found.", show_alert=True)
+            return ConversationHandler.END
         total = product[3] * qty
         context.user_data['total_amount'] = total
         await query.edit_message_text(payment.get_wallet_payment_summary(user_id, total), reply_markup=utils.wallet_payment_keyboard(), parse_mode='HTML')
@@ -573,6 +587,9 @@ async def handle_admin_toggle_freebie(update: Update, context: ContextTypes.DEFA
     try:
         pid = int(update.message.text.split(' | ')[1])
         product = database.get_product(pid)
+        if not product:
+            await update.message.reply_text("❌ Product not found.")
+            return ConversationHandler.END
         database.toggle_product_freebie(pid, not product[10])
         await update.message.reply_text("✅ Toggled!", reply_markup=utils.admin_main_keyboard())
     except:
@@ -586,6 +603,10 @@ async def handle_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         pid = context.user_data.get('current_product_id')
         product = database.get_product(pid)
         
+        if not product:
+            await update.message.reply_text("❌ Product not found.")
+            return ConversationHandler.END
+
         if qty <= 0:
             await update.message.reply_text("❌ Quantity must be greater than 0.")
             return QUANTITY
@@ -769,7 +790,8 @@ async def deliver_product(update: Update, context: ContextTypes.DEFAULT_TYPE, me
     database.mark_items_as_sold(pid, [item['id'] for item in items])
     database.update_product_stock(pid, -qty)
     product = database.get_product(pid)
-    text = f"✅ <b>Delivery Successful!</b>\n\nOrder ID: <code>{order_id}</code>\n\n"
+    product_name = product[1] if product else "Unknown"
+    text = f"✅ <b>Delivery Successful!</b>\n\nOrder ID: <code>{order_id}</code>\nProduct: <b>{product_name}</b>\n\n"
     for i, data in enumerate(delivery_data, 1):
         text += f"<b>Item #{i}:</b>\n{format_item_data_for_delivery(data)}\n\n"
     
