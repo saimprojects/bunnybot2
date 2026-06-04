@@ -1,239 +1,220 @@
 """
-PostgreSQL-backed database helper module for the Telegram bot.
+SQLite‑backed database helper for the Telegram shop bot.
 
-This module replaces the earlier SQLite implementation.  All state is
-stored in a PostgreSQL database defined by the ``DATABASE_URL``
-environment variable.  Connections are created on demand via
-``get_connection()``.  Each function is responsible for opening a
-connection, executing its query with parameterised placeholders, and
-closing the connection.  Table creation occurs in ``init_db()`` the
-first time the module is imported.
-
-JSON data (e.g. credential dictionaries) are stored as plain text
-using ``json.dumps()`` and parsed with ``json.loads()``.  If you
-prefer to store JSON using the native PostgreSQL ``JSONB`` type you
-may modify the DDL accordingly, but text storage keeps dependencies
-minimal.
-
-To use this module with your bot:
-
-  1. Ensure ``psycopg2`` (or ``psycopg2-binary``) is installed in
-     your environment.
-  2. Set the ``DATABASE_URL`` environment variable to a valid
-     PostgreSQL connection string, for example:
-        ``postgresql://user:password@hostname:5432/dbname``
-  3. Deploy a PostgreSQL instance on your hosting provider and
-     configure backups to avoid data loss.
-
-The schema is largely compatible with the previous SQLite version but
-uses ``SERIAL`` columns for auto-incrementing keys and ``TIMESTAMP``
-types for dates.  If you already have a populated SQLite database and
-wish to migrate it to PostgreSQL you will need to export your data
-manually (e.g. using ``sqlite3`` and ``COPY`` into Postgres).
+The functions defined here provide basic CRUD operations for
+users, products, orders, transactions and stock items.  The schema
+is created on first import via ``init_db``.  Products can be
+optionally marked as free and associated with a channel.  Each
+operation opens its own connection to ensure that locks are short
+lived and the database file can remain portable.
 """
 
-import os
-import json
+import sqlite3
 import datetime
-import psycopg2
-import psycopg2.extras
+import json
+import os
+import config
 
-# Connection URL for PostgreSQL.  A sensible default is provided for
-# development but MUST be overridden in production.  The URL format
-# should follow ``postgresql://user:password@host:port/database``.
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/shopdb")
-
-
-def get_connection():
-    """Return a new database connection.
-
-    ``psycopg2`` will parse the connection URL provided via
-    ``DATABASE_URL``.  Caller is responsible for closing the
-    connection.
-    """
-    return psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+# Name of the SQLite database file.  Use the environment variable
+# ``SHOP_DB_PATH`` to override the default location.  A relative
+# filename will create the database in the working directory.
+DATABASE_NAME = config.SHOP_DB_PATH
 
 
 def init_db():
-    """Create all required tables if they don't already exist."""
-    conn = get_connection()
-    cur = conn.cursor()
+    """Create all tables if they do not exist.
 
-    # Users table stores basic account information and wallet
-    cur.execute(
-        """
+    This function is idempotent and can be called repeatedly.  It
+    ensures that the database schema is up to date, adding columns
+    such as ``emoji_id``, ``is_free`` and ``free_channel`` if
+    necessary.
+    """
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+
+    # Create users
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS users (
-            id BIGINT PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             username TEXT,
-            joined_date TIMESTAMP,
-            wallet_balance NUMERIC DEFAULT 0,
+            joined_date TEXT,
+            wallet_balance REAL DEFAULT 0.0,
             total_orders INTEGER DEFAULT 0,
             referrals INTEGER DEFAULT 0,
-            referral_earnings NUMERIC DEFAULT 0
+            referral_earnings REAL DEFAULT 0.0
         )
-        """
+        '''
     )
 
-    # Products table describes products available for purchase
-    cur.execute(
-        """
+    # Products table
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS products (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
             duration TEXT,
-            price NUMERIC,
+            price REAL,
             stock INTEGER,
-            rating NUMERIC,
+            rating REAL,
             description TEXT,
             features TEXT,
             note TEXT,
             emoji_id TEXT
         )
-        """
+        '''
     )
 
-    # Orders table records purchases.
-    cur.execute(
-        """
+    # Orders table: store delivery_details as JSON string
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS orders (
             id TEXT PRIMARY KEY,
-            user_id BIGINT REFERENCES users(id),
-            product_id INTEGER REFERENCES products(id),
+            user_id INTEGER,
+            product_id INTEGER,
             quantity INTEGER,
-            total_amount NUMERIC,
+            total_amount REAL,
             payment_method TEXT,
             status TEXT,
-            order_date TIMESTAMP,
-            delivery_details TEXT
+            order_date TEXT,
+            delivery_details TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (product_id) REFERENCES products(id)
         )
-        """
+        '''
     )
 
-    # Transactions table keeps a ledger of wallet changes
-    cur.execute(
-        """
+    # Transactions table
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS transactions (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT REFERENCES users(id),
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
             type TEXT,
-            amount NUMERIC,
-            transaction_date TIMESTAMP
+            amount REAL,
+            transaction_date TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
-        """
+        '''
     )
 
-    # unsold_items holds stock items that have not yet been sold.
-    cur.execute(
-        """
+    # Inventory (unsold items)
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS unsold_items (
-            id SERIAL PRIMARY KEY,
-            product_id INTEGER REFERENCES products(id),
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER,
             email TEXT,
             password TEXT,
             item_data TEXT,
-            is_sold BOOLEAN DEFAULT FALSE
+            is_sold INTEGER DEFAULT 0,
+            FOREIGN KEY (product_id) REFERENCES products(id)
         )
-        """
+        '''
     )
 
-    # Withdrawals table stores user withdrawal requests.
-    cur.execute(
-        """
+    # Withdrawals table
+    cursor.execute(
+        '''
         CREATE TABLE IF NOT EXISTS withdrawals (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT REFERENCES users(id),
-            amount NUMERIC,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            amount REAL,
             address TEXT,
             status TEXT DEFAULT 'Pending',
-            request_date TIMESTAMP
+            request_date TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
-        """
+        '''
     )
 
-    # Add optional columns for freebies.  If they already exist,
-    # PostgreSQL will ignore the IF NOT EXISTS clause.  ``is_free``
-    # indicates that a product is available for free and
-    # ``free_channel`` stores the channel username (without '@') that
-    # the user must join to claim it.  You can modify ``free_channel``
-    # to store a channel ID instead if preferred.
-    cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_free BOOLEAN DEFAULT FALSE")
-    cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS free_channel TEXT")
+    # Schema migrations: check for missing columns
+    cursor.execute("PRAGMA table_info(products)")
+    product_columns = [row[1] for row in cursor.fetchall()]
+    if "emoji_id" not in product_columns:
+        cursor.execute("ALTER TABLE products ADD COLUMN emoji_id TEXT")
+    if "is_free" not in product_columns:
+        cursor.execute("ALTER TABLE products ADD COLUMN is_free INTEGER DEFAULT 0")
+    if "free_channel" not in product_columns:
+        cursor.execute("ALTER TABLE products ADD COLUMN free_channel TEXT")
 
     conn.commit()
-    cur.close()
+    conn.close()
+
+
+def create_user(user_id, username):
+    """Create a user record if it does not exist."""
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    joined_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(
+        'INSERT OR IGNORE INTO users (id, username, joined_date) VALUES (?, ?, ?)',
+        (user_id, username, joined_date)
+    )
+    conn.commit()
     conn.close()
 
 
 def get_user(user_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
-    user = cur.fetchone()
-    cur.close()
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+    user = cursor.fetchone()
     conn.close()
     return user
 
 
-def create_user(user_id, username):
-    conn = get_connection()
-    cur = conn.cursor()
-    joined_date = datetime.datetime.now()
-    cur.execute(
-        'INSERT INTO users (id, username, joined_date) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING',
-        (user_id, username, joined_date)
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
-def update_user_wallet(user_id, amount):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('UPDATE users SET wallet_balance = wallet_balance + %s WHERE id = %s', (amount, user_id))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
 def get_all_users():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM users ORDER BY joined_date DESC')
-    users = cur.fetchall()
-    cur.close()
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users ORDER BY joined_date DESC')
+    users = cursor.fetchall()
     conn.close()
     return users
 
 
-def get_product(product_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM products WHERE id = %s', (product_id,))
-    product = cur.fetchone()
-    cur.close()
+def update_user_wallet(user_id, amount):
+    """Adjust a user's wallet balance by ``amount``."""
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?',
+        (amount, user_id)
+    )
+    conn.commit()
     conn.close()
-    return product
 
 
-def get_all_products():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM products ORDER BY id DESC')
-    products = cur.fetchall()
-    cur.close()
+def increment_user_referrals(user_id, count=1):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE users SET referrals = referrals + ? WHERE id = ?',
+        (count, user_id)
+    )
+    conn.commit()
     conn.close()
-    return products
+
+
+def increment_user_orders(user_id, count=1):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE users SET total_orders = total_orders + ? WHERE id = ?',
+        (count, user_id)
+    )
+    conn.commit()
+    conn.close()
 
 
 def add_product(name, duration, price, stock, rating, description, features, note, emoji_id=""):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
         '''
         INSERT INTO products
         (name, duration, price, stock, rating, description, features, note, emoji_id)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''',
         (
             name,
@@ -248,349 +229,286 @@ def add_product(name, duration, price, stock, rating, description, features, not
         )
     )
     conn.commit()
-    cur.close()
     conn.close()
 
 
+def get_product(product_id):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM products WHERE id = ?', (product_id,))
+    product = cursor.fetchone()
+    conn.close()
+    return product
+
+
+def get_all_products():
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM products ORDER BY id DESC')
+    products = cursor.fetchall()
+    conn.close()
+    return products
+
+
 def update_product_stock(product_id, quantity_change):
-    """Increment or decrement stock by ``quantity_change`` for a product."""
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('UPDATE products SET stock = stock + %s WHERE id = %s', (quantity_change, product_id))
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE products SET stock = stock + ? WHERE id = ?',
+        (quantity_change, product_id)
+    )
     conn.commit()
-    cur.close()
     conn.close()
 
 
 def set_product_stock(product_id, new_stock):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('UPDATE products SET stock = %s WHERE id = %s', (new_stock, product_id))
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE products SET stock = ? WHERE id = ?', (new_stock, product_id))
     conn.commit()
-    cur.close()
     conn.close()
 
 
 def set_product_price(product_id, new_price):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('UPDATE products SET price = %s WHERE id = %s', (new_price, product_id))
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE products SET price = ? WHERE id = ?', (new_price, product_id))
     conn.commit()
-    cur.close()
+    conn.close()
+
+
+def update_product_field(product_id, field_name, new_value):
+    allowed = {"name", "duration", "description", "note", "emoji_id"}
+    if field_name not in allowed:
+        raise ValueError(f"Invalid field '{field_name}'. Allowed: {', '.join(sorted(allowed))}.")
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    query = f'UPDATE products SET {field_name} = ? WHERE id = ?'
+    cursor.execute(query, (new_value, product_id))
+    conn.commit()
     conn.close()
 
 
 def delete_product(product_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('DELETE FROM unsold_items WHERE product_id = %s', (product_id,))
-    cur.execute('DELETE FROM products WHERE id = %s', (product_id,))
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM unsold_items WHERE product_id = ?', (product_id,))
+    cursor.execute('DELETE FROM products WHERE id = ?', (product_id,))
     conn.commit()
-    cur.close()
     conn.close()
 
 
 def create_order(order_id, user_id, product_id, quantity, total_amount, payment_method, status, delivery_details):
-    conn = get_connection()
-    cur = conn.cursor()
-    order_date = datetime.datetime.now()
-    cur.execute(
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    order_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(
         '''
         INSERT INTO orders
         (id, user_id, product_id, quantity, total_amount, payment_method, status, order_date, delivery_details)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''',
         (order_id, user_id, product_id, quantity, total_amount, payment_method, status, order_date, json.dumps(delivery_details))
     )
     conn.commit()
-    cur.close()
     conn.close()
 
 
 def get_order_by_id(order_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM orders WHERE id = %s', (order_id,))
-    order = cur.fetchone()
-    cur.close()
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM orders WHERE id = ?', (order_id,))
+    order = cursor.fetchone()
     conn.close()
     return order
 
 
 def get_user_orders(user_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM orders WHERE user_id = %s ORDER BY order_date DESC', (user_id,))
-    orders = cur.fetchall()
-    cur.close()
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM orders WHERE user_id = ? ORDER BY order_date DESC', (user_id,))
+    orders = cursor.fetchall()
     conn.close()
     return orders
 
 
 def get_all_orders(limit=20):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM orders ORDER BY order_date DESC LIMIT %s', (limit,))
-    orders = cur.fetchall()
-    cur.close()
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM orders ORDER BY order_date DESC LIMIT ?', (limit,))
+    orders = cursor.fetchall()
+    conn.close()
+    return orders
+
+
+def get_all_orders_admin(limit=50):
+    """Return up to ``limit`` orders for admin review."""
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM orders ORDER BY order_date DESC LIMIT ?', (limit,))
+    orders = cursor.fetchall()
     conn.close()
     return orders
 
 
 def add_transaction(user_id, tx_type, amount):
-    conn = get_connection()
-    cur = conn.cursor()
-    transaction_date = datetime.datetime.now()
-    cur.execute(
-        'INSERT INTO transactions (user_id, type, amount, transaction_date) VALUES (%s, %s, %s, %s)',
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    transaction_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(
+        'INSERT INTO transactions (user_id, type, amount, transaction_date) VALUES (?, ?, ?, ?)',
         (user_id, tx_type, amount, transaction_date)
     )
     conn.commit()
-    cur.close()
     conn.close()
 
 
 def get_user_transactions(user_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM transactions WHERE user_id = %s ORDER BY transaction_date DESC', (user_id,))
-    transactions = cur.fetchall()
-    cur.close()
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM transactions WHERE user_id = ? ORDER BY transaction_date DESC', (user_id,))
+    txs = cursor.fetchall()
     conn.close()
-    return transactions
+    return txs
 
 
 def add_unsold_item(product_id, item_data, password=None):
-    """Add a new unsold item for a product.  ``item_data`` may be a dict
-    of credential fields or a raw email string.  The JSON-encoded
-    representation of the credentials is stored in ``item_data`` column
-    while e.g. email and password are duplicated in their own columns
-    for quick access."""
+    """Add a new unsold item for a product.  ``item_data`` may be a dict or a string."""
+    if not item_data:
+        raise ValueError("Empty item_data")
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
     if isinstance(item_data, dict):
-        data_dict = item_data
-        email_value = data_dict.get("email", "")
-        password_value = data_dict.get("password", "")
+        email = item_data.get('email')
+        pwd = item_data.get('password', password)
+        cursor.execute(
+            'INSERT INTO unsold_items (product_id, email, password, item_data) VALUES (?, ?, ?, ?)',
+            (product_id, email, pwd, json.dumps(item_data))
+        )
     else:
-        data_dict = {"email": item_data, "password": password or ""}
-        email_value = item_data
-        password_value = password or ""
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        'INSERT INTO unsold_items (product_id, email, password, item_data) VALUES (%s, %s, %s, %s)',
-        (product_id, email_value, password_value, json.dumps(data_dict))
-    )
+        # treat as plain credential (email:password or token)
+        cursor.execute(
+            'INSERT INTO unsold_items (product_id, item_data) VALUES (?, ?)',
+            (product_id, str(item_data))
+        )
     conn.commit()
-    cur.close()
     conn.close()
 
 
-def get_unsold_items(product_id, quantity):
-    """Return up to ``quantity`` unsold items for the given product.  Each
-    returned item is a dict with ``id`` and ``data`` fields.  The
-    ``data`` field contains the decoded credential dictionary."""
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        '''
-        SELECT id, email, password, item_data
-        FROM unsold_items
-        WHERE product_id = %s AND is_sold = FALSE
-        ORDER BY id ASC
-        LIMIT %s
-        ''',
-        (product_id, quantity)
+def get_unsold_items(product_id, limit=1):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT * FROM unsold_items WHERE product_id = ? AND is_sold = 0 LIMIT ?',
+        (product_id, limit)
     )
-    rows = cur.fetchall()
-    cur.close()
+    items = cursor.fetchall()
     conn.close()
-    items = []
-    for row in rows:
-        item_id = row["id"]
-        email = row.get("email")
-        password = row.get("password")
-        item_data_json = row.get("item_data")
-        if item_data_json:
-            try:
-                data = json.loads(item_data_json)
-            except Exception:
-                data = {"email": email, "password": password}
-        else:
-            data = {"email": email, "password": password}
-        items.append({"id": item_id, "data": data})
     return items
 
 
-def mark_items_as_sold(product_id, item_ids):
-    conn = get_connection()
-    cur = conn.cursor()
-    for item_id in item_ids:
-        cur.execute(
-            'UPDATE unsold_items SET is_sold = TRUE WHERE product_id = %s AND id = %s AND is_sold = FALSE',
-            (product_id, item_id)
-        )
+def mark_item_sold(item_id, user_id=None):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE unsold_items SET is_sold = 1 WHERE id = ?', (item_id,))
     conn.commit()
-    cur.close()
     conn.close()
 
 
 def get_unsold_count(product_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT COUNT(*) FROM unsold_items WHERE product_id = %s AND is_sold = FALSE', (product_id,))
-    count = cur.fetchone()[0]
-    cur.close()
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM unsold_items WHERE product_id = ? AND is_sold = 0', (product_id,))
+    count = cursor.fetchone()[0]
     conn.close()
     return count
 
 
 def get_sold_count(product_id):
-    """Return the number of items sold for the given product.  This counts
-    unsold_items rows with ``is_sold = TRUE``."""
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT COUNT(*) FROM unsold_items WHERE product_id = %s AND is_sold = TRUE', (product_id,))
-    count = cur.fetchone()[0]
-    cur.close()
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM unsold_items WHERE product_id = ? AND is_sold = 1', (product_id,))
+    count = cursor.fetchone()[0]
     conn.close()
     return count
 
 
-def update_unsold_item_data(item_id, updates):
-    """Update the credential fields for an unsold item.  ``updates`` should
-    be a mapping of field names to new values (e.g. {'email': 'new',
-    'password': 'secret'}).  The function updates the JSON
-    ``item_data`` column as well as the top‑level email/password
-    columns.
-
-    Returns True if the item existed and was updated, otherwise
-    False.
-    """
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT item_data FROM unsold_items WHERE id = %s', (item_id,))
-    row = cur.fetchone()
+def update_unsold_item_data(item_id, updates: dict):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT item_data FROM unsold_items WHERE id = ?', (item_id,))
+    row = cursor.fetchone()
     if not row:
-        cur.close()
         conn.close()
         return False
-    item_data_json = row[0] or '{}'
+    item_json = row[0]
+    data = {}
     try:
-        data_dict = json.loads(item_data_json) if item_data_json else {}
+        data = json.loads(item_json) if item_json else {}
     except Exception:
-        data_dict = {}
-    # Update fields
-    for key, value in updates.items():
-        data_dict[key] = value
-    email_value = data_dict.get('email', '')
-    password_value = data_dict.get('password', '')
-    cur.execute(
-        'UPDATE unsold_items SET email = %s, password = %s, item_data = %s WHERE id = %s',
-        (email_value, password_value, json.dumps(data_dict), item_id)
+        data = {}
+    # merge updates
+    data.update(updates)
+    email = data.get('email')
+    password = data.get('password')
+    cursor.execute(
+        'UPDATE unsold_items SET item_data = ?, email = ?, password = ? WHERE id = ?',
+        (json.dumps(data), email, password, item_id)
     )
     conn.commit()
-    cur.close()
     conn.close()
     return True
 
 
 def create_withdrawal_request(user_id, amount, address):
-    conn = get_connection()
-    cur = conn.cursor()
-    request_date = datetime.datetime.now()
-    cur.execute(
-        'INSERT INTO withdrawals (user_id, amount, address, request_date) VALUES (%s, %s, %s, %s)',
-        (user_id, amount, address, request_date)
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    req_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(
+        'INSERT INTO withdrawals (user_id, amount, address, request_date) VALUES (?, ?, ?, ?)',
+        (user_id, amount, address, req_date)
     )
     conn.commit()
-    cur.close()
     conn.close()
-
-
-def get_withdrawal(withdrawal_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM withdrawals WHERE id = %s', (withdrawal_id,))
-    withdrawal = cur.fetchone()
-    cur.close()
-    conn.close()
-    return withdrawal
 
 
 def get_pending_withdrawals():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM withdrawals WHERE status = 'Pending' ORDER BY request_date DESC")
-    withdrawals = cur.fetchall()
-    cur.close()
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM withdrawals WHERE status = "Pending"')
+    withdrawals = cursor.fetchall()
     conn.close()
     return withdrawals
 
 
-def update_withdrawal_status(withdrawal_id, status):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('UPDATE withdrawals SET status = %s WHERE id = %s', (status, withdrawal_id))
+def get_withdrawal(withdrawal_id):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM withdrawals WHERE id = ?', (withdrawal_id,))
+    w = cursor.fetchone()
+    conn.close()
+    return w
+
+
+def update_withdrawal_status(withdrawal_id, new_status):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE withdrawals SET status = ? WHERE id = ?', (new_status, withdrawal_id))
     conn.commit()
-    cur.close()
     conn.close()
 
 
-def set_product_free(product_id, channel_username):
-    """Mark a product as free and associate it with the given channel.
-
-    ``channel_username`` should be provided without the leading '@'.  This
-    function sets ``is_free`` to TRUE and stores the channel for later
-    membership verification.  Returns True if updated, False if the
-    product does not exist.
-    """
-    conn = get_connection()
-    cur = conn.cursor()
-    # Ensure the product exists
-    cur.execute('SELECT id FROM products WHERE id = %s', (product_id,))
-    if not cur.fetchone():
-        cur.close()
-        conn.close()
-        return False
-    cur.execute(
-        'UPDATE products SET is_free = TRUE, free_channel = %s WHERE id = %s',
-        (channel_username, product_id)
-    )
+def set_product_free(product_id, channel: str):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE products SET is_free = 1, free_channel = ? WHERE id = ?', (channel, product_id))
     conn.commit()
-    cur.close()
     conn.close()
-    return True
 
 
 def unset_product_free(product_id):
-    """Remove the free status from a product.
-
-    Sets ``is_free`` to FALSE and clears the ``free_channel``.  Returns
-    True if the product existed.
-    """
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute('SELECT id FROM products WHERE id = %s', (product_id,))
-    if not cur.fetchone():
-        cur.close()
-        conn.close()
-        return False
-    cur.execute(
-        'UPDATE products SET is_free = FALSE, free_channel = NULL WHERE id = %s',
-        (product_id,)
-    )
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE products SET is_free = 0, free_channel = NULL WHERE id = ?', (product_id,))
     conn.commit()
-    cur.close()
     conn.close()
-    return True
-
-
-# Initialise the database when the module is imported.
-try:
-    init_db()
-except Exception:
-    # Avoid crashing the bot on module import if the database is
-    # temporarily unavailable.  Connection errors will surface when
-    # functions are called and should be logged at that point.  You
-    # may choose to log here if you have a logger available.
-    pass

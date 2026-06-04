@@ -1,34 +1,45 @@
-import database
+"""
+Product message formatting helpers.
+
+This module provides functions to generate human friendly product
+descriptions for Telegram.  It uses custom emojis exclusively and
+supports embedding custom emoji IDs in free text fields using the
+square bracket notation (e.g. ``[123456789]``).  When rendering
+details the number of items sold for each product is included.
+"""
+
+import re
 from html import escape as html_escape
+import database
 
 
-def tg(emoji_id, fallback):
-    """Return a Telegram custom emoji tag.  ``emoji_id`` must be a
-    ``str`` representing the custom emoji's ID.  ``fallback`` is the
-    normal emoji that will be displayed if the client doesn't support
-    custom emojis.  We always provide a fallback to keep messages
-    readable for all clients."""
+def tg(emoji_id: str, fallback: str) -> str:
+    """Return a Telegram custom emoji tag.
+
+    ``emoji_id`` must be a string.  ``fallback`` is ignored since the
+    bot uses only custom emojis.  The fallback is still provided for
+    completeness and to satisfy Telegram's API requirements.
+    """
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 
-# Custom emoji IDs for product metadata.  These values map to
-# Telegram custom emojis configured for the bot.  Only custom
-# emojis are used to satisfy the user's requirement that no
-# non‑custom emojis appear in the bot UI.
+# Default custom emoji IDs for product metadata.  These values should
+# match those configured on the bot's Telegram account.  Only custom
+# emojis are used to satisfy the requirement of not using native
+# emojis in the bot UI.
 EMOJIS = {
     "product": "5231012545799666522",      # 📦
     "wallet": "5409048419211682843",       # 💰
     "date": "5413879192267805083",         # 📅
-    "sticker": "5406745015365943482",      # 👇
+    "sticker": "5406745015365943482",       # 👇
     "confirm": "5206607081334906820",      # ✅
     "warning": "5210952531676504517",      # ❌
     "description": "5282843764451195532",  # 📖
 }
 
 
-def safe(value):
-    """Escape a value for safe inclusion in HTML messages.  None values
-    become an empty string."""
+def safe(value) -> str:
+    """Escape a value for safe inclusion in HTML messages."""
     return html_escape(str(value)) if value is not None else ""
 
 
@@ -36,18 +47,14 @@ def format_with_custom_emojis(text: str) -> str:
     """Replace [emoji_id] patterns with Telegram custom emoji tags.
 
     Admins can embed custom emoji IDs in descriptions or broadcast
-    messages using square brackets, e.g. ``[981239791739]``.  This
-    helper converts such patterns into the appropriate
-    ``<tg-emoji>`` markup so that Telegram displays the custom emoji
-    when ``parse_mode`` is set to ``HTML``.  If ``text`` is falsy,
-    returns an empty string.
-
-    A minimal fallback (a space) is used inside the tag to satisfy
-    Telegram API requirements for fallback text.
+    messages using square brackets.  This helper converts such
+    patterns into ``<tg-emoji>`` markup so that Telegram displays
+    the custom emoji when ``parse_mode`` is ``HTML``.  If ``text``
+    is falsy, returns an empty string.  A minimal fallback (a
+    single space) is used inside the tag.
     """
     if not text:
         return ""
-    import re
 
     def repl(match):
         emoji_id = match.group(1)
@@ -56,54 +63,36 @@ def format_with_custom_emojis(text: str) -> str:
     return re.sub(r'\[(\d+)\]', repl, str(text))
 
 
-def get_product_icon(emoji_id):
-    """Return the custom emoji tag for a product.  If the product has a
-    custom ``emoji_id`` set in the database it is used, otherwise
-    the default product emoji is returned."""
+def get_product_icon(emoji_id: str) -> str:
+    """Return the custom emoji tag for a product icon."""
     if emoji_id and str(emoji_id).strip() and str(emoji_id).strip().lower() != "none":
         return tg(str(emoji_id).strip(), "📦")
     return tg(EMOJIS["product"], "📦")
 
 
-def get_product_details_message(product_id):
-    """Return a formatted message describing the details of a single
-    product.  The message includes the name, duration, price, stock
-    remaining, number sold, description, and note.  All values are
-    HTML escaped to prevent injection and all emojis come from the
-    custom emoji set defined above."""
-    product = database.get_product(product_id)
+def get_product_details_message(product_id: int) -> str:
+    """Return a formatted HTML message describing a product.
 
+    The message includes the name, duration, price, stock,
+    number sold, description and note.  Custom emojis embedded via
+    square bracket notation are converted appropriately.  If the
+    product is not found a warning is returned.
+    """
+    product = database.get_product(product_id)
     if not product:
         return f"{tg(EMOJIS['warning'], '❌')} <b>Product not found.</b>"
-
-    # Database product tuple layout:
-    # 0 id, 1 name, 2 duration, 3 price, 4 stock,
-    # 5 rating, 6 description, 7 features_json, 8 note, 9 emoji_id
-    if len(product) > 9:
-        pid = product[0]
-        name = product[1]
-        duration = product[2]
-        price = product[3]
-        stock = product[4]
-        description = product[6]
-        note = product[8]
-        emoji_id = product[9]
-    else:
-        pid, name, duration, price, stock, description, note, emoji_id = (
-            product if len(product) >= 8 else (*product, "", "", "")
-        )
-
-    product_icon = get_product_icon(emoji_id)
-    # Compute how many items have been sold for this product
+    # Unpack product tuple.  Layout:
+    # id,name,duration,price,stock,rating,description,features_json,note,emoji_id,is_free,free_channel
+    pid = product[0]
+    name = product[1]
+    duration = product[2]
+    price = product[3]
+    stock = product[4]
+    description = product[6] if len(product) > 6 else ""
+    note = product[8] if len(product) > 8 else ""
+    emoji_id = product[9] if len(product) > 9 else ""
     sold_count = database.get_sold_count(pid) if pid else 0
-
-    # Build the message.  Freeform fields such as name, duration,
-    # description and note may include Telegram formatting and custom
-    # emoji IDs expressed as [1234567890].  Use
-    # ``format_with_custom_emojis`` on those fields to convert the
-    # bracket notation into proper custom emoji tags.  Numeric
-    # fields (price, stock, sold count) remain escaped to prevent
-    # injection.
+    product_icon = get_product_icon(emoji_id)
     message = (
         f"{product_icon} <b>Product Details</b>\n\n"
         f"{product_icon} <b>Name:</b> {format_with_custom_emojis(name)}\n"
@@ -117,5 +106,4 @@ def get_product_details_message(product_id):
         f"{format_with_custom_emojis(note)}\n\n"
         f"━━━━━━━━━━━━━━━━━━"
     )
-
     return message

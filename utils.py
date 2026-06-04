@@ -1,30 +1,25 @@
 """
-Utility functions for building Telegram inline keyboards and order
-identifiers.
+Utility functions for building Telegram inline keyboards and order IDs.
 
-The keyboard helpers centralize how buttons are laid out and ensure
-that custom emojis are consistently applied.  If you add new
-administrative actions, define the button here and assign an
-appropriate callback data.
-
-This version removes the standalone "Order Details" option from the
-user main menu (users can now view order details directly within the
-purchase history) and introduces new admin actions for editing
-product details and item credentials.
+This module centralizes how buttons are laid out and ensures that
+custom emojis are applied consistently.  All emojis used here are
+custom and require the corresponding emoji to exist on the bot's
+account.  The keyboards defined here are used both for user flows
+and admin flows.
 """
 
 import uuid
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-# Emoji mapping.  All entries must refer to custom emoji IDs; the
-# fallback emoji characters in the second element of the tuple are
-# intentionally omitted to honour the requirement that only custom
-# emojis be used in the bot UI.
+# Mapping from logical names to custom emoji IDs.  Only custom
+# emojis are referenced here.  There are no fallback characters to
+# honour the requirement that only custom emojis be used in the bot
+# UI.
 EMOJIS = {
     "products": "5456140674028019486",
     "purchase_history": "5210956306952758910",
-    "profile": "5253742260054409879",
+    "profile": "5461117441612462242",
     "support": "5443038326535759644",
     "wallet": "5409048419211682843",
     "order_details": "5282843764451195532",
@@ -43,36 +38,34 @@ EMOJIS = {
     "broadcast": "5424818078833715060",
     "stats": "5231200819986047254",
     "view_products": "5231012545799666522",
-    "binance_pay": "6222208096257712941",  # Binance icon custom emoji
-    "wallet_pay": "5409048419211682843",   # Wallet icon
-    # Additional icons for new admin actions reuse existing IDs
-    "edit_details": "5451882707875276247",  # reuse edit_stock icon
-    "edit_credentials": "5451882707875276247",  # reuse edit_stock icon
-
-    # Freebies: use the gift icon for both user and admin buttons
+    "binance_pay": "6222208096257712941",
+    "wallet_pay": "5409048419211682843",
+    "edit_details": "5451882707875276247",
+    "edit_credentials": "5451882707875276247",
     "freebie": "5217822164362739968",
 }
 
 
-def generate_order_id():
+def generate_order_id() -> str:
     """Generate a short unique order identifier."""
     return "ORD" + str(uuid.uuid4())[:8].upper()
 
 
-def btn(text, callback_data=None, url=None, style="default", emoji_id=None):
+def btn(text: str, callback_data: str = None, url: str = None, emoji_id: str = None) -> InlineKeyboardButton:
+    """Create a Telegram inline button with an optional custom emoji."""
     api_kwargs = {}
     if emoji_id:
         api_kwargs["icon_custom_emoji_id"] = str(emoji_id)
     if url:
-        return InlineKeyboardButton(text=text, url=url, style=style, api_kwargs=api_kwargs)
-    return InlineKeyboardButton(text=text, callback_data=callback_data, style=style, api_kwargs=api_kwargs)
+        return InlineKeyboardButton(text=text, url=url, **api_kwargs)
+    return InlineKeyboardButton(text=text, callback_data=callback_data, **api_kwargs)
 
 
-def back_btn(text="Back", callback_data="main_menu", style="primary"):
-    return btn(text, callback_data=callback_data, style=style, emoji_id=EMOJIS["back"])
+def back_btn(text: str = "Back", callback_data: str = "main_menu") -> InlineKeyboardButton:
+    return btn(text, callback_data=callback_data, emoji_id=EMOJIS["back"])
 
 
-def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
+def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None) -> InlineKeyboardMarkup:
     menu = [buttons[i:i + n_cols] for i in range(0, len(buttons), n_cols)]
     if header_buttons:
         menu.insert(0, header_buttons)
@@ -81,21 +74,19 @@ def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
     return InlineKeyboardMarkup(menu)
 
 
-# ─── USER KEYBOARDS ───────────────────────────────────────
+# ─── USER KEYBOARDS ────────────────────────────────────────────────
 
 
-def main_menu_keyboard():
-    """Return the main menu for users.  Order details has been
-    removed; purchase history now includes full details."""
+def main_menu_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
-        [btn("Products", callback_data='products', style="success", emoji_id=EMOJIS["products"])],
+        [btn("Products", callback_data='products', emoji_id=EMOJIS["products"])],
         [
-            btn("Profile", callback_data='profile', style="primary", emoji_id=EMOJIS["profile"]),
-            btn("Purchase History", callback_data='purchase_history', style="danger", emoji_id=EMOJIS["purchase_history"]),
+            btn("Profile", callback_data='profile', emoji_id=EMOJIS["profile"]),
+            btn("Purchase History", callback_data='purchase_history', emoji_id=EMOJIS["purchase_history"]),
         ],
         [
-            btn("Wallet", callback_data='wallet', style="success", emoji_id=EMOJIS["wallet"]),
-            btn("Support", callback_data='support', style="danger", emoji_id=EMOJIS["support"]),
+            btn("Wallet", callback_data='wallet', emoji_id=EMOJIS["wallet"]),
+            btn("Support", callback_data='support', emoji_id=EMOJIS["support"]),
         ],
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -110,166 +101,133 @@ def products_list_keyboard(products):
         stock = p[4]
         product_emoji_id = p[9] if len(p) > 9 and p[9] else None
         text = f"{product_name}  {price}$  ({stock})"
-        style = "success" if stock and stock > 0 else "danger"
-        buttons.append(btn(text, callback_data=f'product_{product_id}', style=style, emoji_id=product_emoji_id or EMOJIS["products"]))
+        buttons.append(btn(text, callback_data=f'product_{product_id}', emoji_id=product_emoji_id or EMOJIS["products"]))
     buttons.append(back_btn("Back to Main Menu", callback_data='main_menu'))
     return build_menu(buttons, n_cols=1)
 
 
-def product_details_keyboard(product=None):
-    """Build the product details keyboard.
-
-    If ``product`` is provided and it has the ``is_free`` flag set,
-    include a "Claim Free" button that lets users obtain the item for
-    free (pending membership verification).  Otherwise show the
-    standard "Order Now" button.  Always include a Back button.
-    """
+def product_details_keyboard(product=None) -> InlineKeyboardMarkup:
     buttons = []
-    # When product is free, show claim button; otherwise show order button
-    if product and product.get("is_free"):
-        buttons.append(btn("Claim Free", callback_data='claim_free', style="success", emoji_id=EMOJIS["freebie"]))
+    is_free = False
+    if product:
+        # product tuple: id,name,duration,price,stock,rating,description,features,note,emoji_id,is_free,free_channel
+        if isinstance(product, tuple) and len(product) > 10:
+            is_free = bool(product[10])
+        elif isinstance(product, dict):
+            is_free = bool(product.get("is_free"))
+    if is_free:
+        buttons.append(btn("Claim Free", callback_data='claim_free', emoji_id=EMOJIS["freebie"]))
     else:
-        buttons.append(btn("Order Now", callback_data='order_now', style="success", emoji_id=EMOJIS["order"]))
-    # Back button is always present
-    buttons.append(back_btn("Back to Products", callback_data='products', style="danger"))
+        buttons.append(btn("Order Now", callback_data='order_now', emoji_id=EMOJIS["order"]))
+    buttons.append(back_btn("Back to Products", callback_data='products'))
     return build_menu(buttons, n_cols=1)
 
 
-def quantity_selection_keyboard():
-    buttons = [back_btn("Back to Product", callback_data='back_to_product_details', style="danger")]
-    return build_menu(buttons, n_cols=1)
+def quantity_selection_keyboard() -> InlineKeyboardMarkup:
+    # For simplicity we provide a single back button.  Quantity is
+    # entered via text message in the current design.
+    return build_menu([back_btn("Back to Product", callback_data='back_to_product_details')], n_cols=1)
 
 
-def payment_method_keyboard():
-    """Two payment options: Binance Pay ID OR Wallet - with custom emojis"""
+def payment_method_keyboard() -> InlineKeyboardMarkup:
     return build_menu([
-        btn("Pay with Binance Pay ID", callback_data="pay_binance", style="success", emoji_id=EMOJIS["binance_pay"]),
-        btn("Pay with Wallet", callback_data="pay_wallet", style="primary", emoji_id=EMOJIS["wallet_pay"]),
-        back_btn("Back to Quantity", callback_data="back_to_quantity", style="danger"),
+        btn("Pay with Binance Pay ID", callback_data="pay_binance", emoji_id=EMOJIS["binance_pay"]),
+        btn("Pay with Wallet", callback_data="pay_wallet", emoji_id=EMOJIS["wallet_pay"]),
+        back_btn("Back to Quantity", callback_data='back_to_quantity'),
     ], n_cols=1)
 
 
-def binance_payment_keyboard():
-    """Purchase: Payment details message. Buttons: I have sent payment + Cancel Order"""
+def binance_payment_keyboard() -> InlineKeyboardMarkup:
     return build_menu([
-        btn("I have sent payment", callback_data="check_binance_payment", style="success", emoji_id=EMOJIS["confirm"]),
-        btn("Cancel Order", callback_data="cancel_order", style="danger", emoji_id=EMOJIS["cancel"]),
+        btn("I have sent payment", callback_data="check_binance_payment", emoji_id=EMOJIS["confirm"]),
+        btn("Cancel Order", callback_data="cancel_order", emoji_id=EMOJIS["cancel"]),
     ], n_cols=1)
 
 
-def ask_order_id_keyboard():
-    """Purchase: When the bot asks for an order ID.  Only Cancel button"""
+def ask_order_id_keyboard() -> InlineKeyboardMarkup:
+    return build_menu([btn("Cancel Order", callback_data="cancel_order", emoji_id=EMOJIS["cancel"])], n_cols=1)
+
+
+def deposit_enter_amount_keyboard() -> InlineKeyboardMarkup:
+    return build_menu([back_btn("Back", callback_data="wallet")], n_cols=1)
+
+
+def deposit_wallet_keyboard() -> InlineKeyboardMarkup:
     return build_menu([
-        btn("Cancel Order", callback_data="cancel_order", style="danger", emoji_id=EMOJIS["cancel"]),
+        btn("I have sent payment", callback_data="check_deposit_payment", emoji_id=EMOJIS["confirm"]),
+        back_btn("Back", callback_data="wallet"),
     ], n_cols=1)
 
 
-def deposit_enter_amount_keyboard():
-    """Deposit Step 1: ask for amount.  Only Back button"""
+def ask_deposit_ref_keyboard() -> InlineKeyboardMarkup:
+    return build_menu([back_btn("Cancel", callback_data="wallet")], n_cols=1)
+
+
+def wallet_payment_keyboard() -> InlineKeyboardMarkup:
     return build_menu([
-        back_btn("Back", callback_data="wallet", style="danger"),
+        btn("Confirm & Pay", callback_data='confirm_wallet_payment', emoji_id=EMOJIS["confirm"]),
+        btn("Cancel", callback_data='cancel_order', emoji_id=EMOJIS["cancel"]),
     ], n_cols=1)
 
 
-def deposit_wallet_keyboard():
-    """Deposit Step 2: show Binance ID and amount.  Buttons: I have sent payment + Back"""
+def insufficient_balance_keyboard() -> InlineKeyboardMarkup:
+    return build_menu([back_btn("Back to Payment", callback_data='back_to_payment_method')], n_cols=1)
+
+
+def wallet_options_keyboard() -> InlineKeyboardMarkup:
     return build_menu([
-        btn("I have sent payment", callback_data="check_deposit_payment", style="success", emoji_id=EMOJIS["confirm"]),
-        back_btn("Back", callback_data="wallet", style="danger"),
+        btn("Deposit with Binance Pay ID", callback_data="deposit_wallet", emoji_id=EMOJIS["deposit"]),
+    ], n_cols=1, footer_buttons=[back_btn("Back", callback_data="main_menu")])
+
+
+def support_keyboard() -> InlineKeyboardMarkup:
+    return build_menu([
+        btn("FAQ", callback_data='faq', emoji_id=EMOJIS["faq"]),
+        btn("Contact Support", url="https://t.me/Bunnyhaccks", emoji_id=EMOJIS["support"]),
+        btn("Announcements", url='https://t.me/bunnyhackss', emoji_id=EMOJIS["announcement"]),
+        back_btn("Back", callback_data='main_menu'),
     ], n_cols=1)
 
 
-def ask_deposit_ref_keyboard():
-    """Deposit Step 3: ask for transaction reference.  Only Cancel button"""
-    return build_menu([
-        back_btn("Cancel", callback_data="wallet", style="danger"),
-    ], n_cols=1)
-
-
-def wallet_payment_keyboard():
-    """Wallet payment confirmation keyboard"""
-    buttons = [
-        btn("Confirm & Pay", callback_data='confirm_wallet_payment', style="success", emoji_id=EMOJIS["confirm"]),
-        btn("Cancel", callback_data='cancel_order', style="danger", emoji_id=EMOJIS["cancel"]),
-    ]
-    return build_menu(buttons, n_cols=1)
-
-
-def insufficient_balance_keyboard():
-    buttons = [back_btn("Back to Payment", callback_data='back_to_payment_method', style="danger")]
-    return build_menu(buttons, n_cols=1)
-
-
-def order_confirmed_keyboard():
-    buttons = [
-        btn("Order Details", callback_data='order_details', style="primary", emoji_id=EMOJIS["order_details"]),
-        back_btn("Back to Main Menu", callback_data='main_menu'),
-    ]
-    return build_menu(buttons, n_cols=1)
-
-
-def wallet_options_keyboard():
-    return build_menu([
-        btn("Deposit with Binance Pay ID", callback_data="deposit_wallet", style="success", emoji_id=EMOJIS["deposit"]),
-    ], n_cols=1, footer_buttons=[
-        back_btn("Back", callback_data="main_menu")
-    ])
-
-
-def support_keyboard():
-    buttons = [
-        btn("FAQ", callback_data='faq', style="primary", emoji_id=EMOJIS["faq"]),
-        btn("Contact Support", url="https://t.me/Bunnyhaccks", style="success", emoji_id=EMOJIS["support"]),
-        btn("Announcements", url='https://t.me/bunnyhackss', style="primary", emoji_id=EMOJIS["announcement"]),
-        back_btn("Back", callback_data='main_menu', style="danger"),
-    ]
-    return build_menu(buttons, n_cols=1)
-
-
-def product_update_purchase_keyboard(product, style="success"):
+def product_update_purchase_keyboard(product, style="success") -> InlineKeyboardMarkup:
     if not product:
         return None
     product_id = product[0]
     product_name = product[1]
     product_emoji_id = product[9] if len(product) > 9 and product[9] else None
-    keyboard = [[
-        btn(f"Buy {product_name}", callback_data=f"product_{product_id}", style=style, emoji_id=product_emoji_id or EMOJIS["products"])
-    ]]
+    keyboard = [[btn(f"Buy {product_name}", callback_data=f"product_{product_id}", emoji_id=product_emoji_id or EMOJIS["products"] )]]
     return InlineKeyboardMarkup(keyboard)
 
 
-# ─── ADMIN KEYBOARDS ──────────────────────────────────────
+# ─── ADMIN KEYBOARDS ───────────────────────────────────────────────
 
 
-def admin_main_keyboard():
+def admin_main_keyboard() -> InlineKeyboardMarkup:
     buttons = [
-        btn("Add Product", callback_data='admin_add_product', style="success", emoji_id=EMOJIS["deposit"]),
-        btn("Bulk Products", callback_data='admin_bulk_add_products', style="success", emoji_id=EMOJIS["deposit"]),
-        btn("Add Stock/Items", callback_data='admin_add_items', style="primary", emoji_id=EMOJIS["view_products"]),
-        btn("Edit Price", callback_data='admin_edit_price', style="primary", emoji_id=EMOJIS["wallet"]),
-        btn("Edit Stock", callback_data='admin_edit_stock', style="primary", emoji_id=EMOJIS["edit_stock"]),
-        btn("Edit Details", callback_data='admin_edit_details', style="primary", emoji_id=EMOJIS["edit_details"]),
-        btn("Edit Credentials", callback_data='admin_edit_credentials', style="primary", emoji_id=EMOJIS["edit_credentials"]),
-        btn("Add Balance", callback_data='admin_add_balance', style="success", emoji_id=EMOJIS["deposit"]),
-        btn("Approve Withdrawal", callback_data='admin_approve_withdrawal', style="success", emoji_id=EMOJIS["confirm"]),
-        btn("Broadcast", callback_data='admin_broadcast', style="danger", emoji_id=EMOJIS["broadcast"]),
-        btn("Delete Product", callback_data='admin_delete_product', style="danger", emoji_id=EMOJIS["delete"]),
-        btn("Order Details", callback_data='admin_order_details', style="primary", emoji_id=EMOJIS["order_details"]),
-        btn("View Products", callback_data='admin_view_products', style="primary", emoji_id=EMOJIS["view_products"]),
-        btn("All Orders", callback_data='admin_view_all_orders', style="primary", emoji_id=EMOJIS["order"]),
-        btn("Withdrawals", callback_data='admin_withdraw_requests', style="danger", emoji_id=EMOJIS["withdraw"]),
-        btn("Stats", callback_data='admin_view_stats', style="success", emoji_id=EMOJIS["stats"]),
-        # Manage freebies: allows the admin to mark products as free or remove free status
-        btn("Freebies", callback_data='admin_set_freebie', style="primary", emoji_id=EMOJIS["freebie"]),
+        btn("Add Product", callback_data='admin_add_product', emoji_id=EMOJIS["deposit"]),
+        btn("Bulk Products", callback_data='admin_bulk_add_products', emoji_id=EMOJIS["deposit"]),
+        btn("Add Stock/Items", callback_data='admin_add_items', emoji_id=EMOJIS["view_products"]),
+        btn("Edit Price", callback_data='admin_edit_price', emoji_id=EMOJIS["wallet"]),
+        btn("Edit Stock", callback_data='admin_edit_stock', emoji_id=EMOJIS["edit_stock"]),
+        btn("Edit Details", callback_data='admin_edit_details', emoji_id=EMOJIS["edit_details"]),
+        btn("Edit Credentials", callback_data='admin_edit_credentials', emoji_id=EMOJIS["edit_credentials"]),
+        btn("Add Balance", callback_data='admin_add_balance', emoji_id=EMOJIS["deposit"]),
+        btn("Approve Withdrawal", callback_data='admin_approve_withdrawal', emoji_id=EMOJIS["confirm"]),
+        btn("Broadcast", callback_data='admin_broadcast', emoji_id=EMOJIS["broadcast"]),
+        btn("Delete Product", callback_data='admin_delete_product', emoji_id=EMOJIS["delete"]),
+        btn("Order Details", callback_data='admin_order_details', emoji_id=EMOJIS["order_details"]),
+        btn("View Products", callback_data='admin_view_products', emoji_id=EMOJIS["view_products"]),
+        btn("All Orders", callback_data='admin_view_all_orders', emoji_id=EMOJIS["order"]),
+        btn("Withdrawals", callback_data='admin_withdraw_requests', emoji_id=EMOJIS["withdraw"]),
+        btn("Stats", callback_data='admin_view_stats', emoji_id=EMOJIS["stats"]),
+        btn("Freebies", callback_data='admin_set_freebie', emoji_id=EMOJIS["freebie"]),
     ]
     return build_menu(buttons, n_cols=2)
 
 
-def admin_back_keyboard():
-    buttons = [back_btn("Back to Admin Panel", callback_data='admin_panel_back')]
-    return build_menu(buttons, n_cols=1)
+def admin_back_keyboard() -> InlineKeyboardMarkup:
+    return build_menu([back_btn("Back to Admin Panel", callback_data='admin_panel_back')], n_cols=1)
 
 
-def admin_cancel_keyboard():
-    buttons = [back_btn("Cancel", callback_data='admin_panel_back', style="danger")]
-    return build_menu(buttons, n_cols=1)
+def admin_cancel_keyboard() -> InlineKeyboardMarkup:
+    return build_menu([back_btn("Cancel", callback_data='admin_panel_back')], n_cols=1)
