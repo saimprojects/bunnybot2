@@ -1,6 +1,6 @@
 python-telegram-bot==22.7
 httpx
-psycopg2-binary
+psycopg2-binary==2.9.9
 requests
 python-dotenv
 psycopg2
