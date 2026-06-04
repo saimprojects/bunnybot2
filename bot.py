@@ -42,18 +42,42 @@ logger = logging.getLogger(__name__)
     ADMIN_TOGGLE_FREEBIE,
 ) = range(15)
 
-def ce(name: str) -> str:
+
+def ce(name: str, fallback: str = None) -> str:
     emoji_data = utils.EMOJIS.get(name)
     if not emoji_data:
-        return ""
-    emoji_id, fallback = emoji_data
+        return fallback or ""
+    emoji_id, default_fallback = emoji_data
+    fallback = fallback or default_fallback
     if not emoji_id:
         return fallback
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
-# ══════════════════════════════════════════════════════════
+
+def build_start_message() -> str:
+    star = ce('welcome_star', '🌟')
+    diamond = ce('diamond', '💎')
+    stats = ce('stats', '📊')
+    products = ce('products', '⚡')
+    wallet = ce('wallet', '💲')
+    profile = ce('profile', '🙂')
+    support = ce('support', '🚨')
+    choose = ce('choose_option', '💎')
+    return (
+        f"{star} <b>Bunny Tools Premium</b> {star}\n\n"
+        f"{diamond} <b>Premium Digital Products with Instant Delivery</b> {diamond}\n"
+        f"{stats} <b>Fast • Secure • Automated</b> {stats}\n\n"
+        f"{products} <b>Products</b>\n"
+        f"{wallet} <b>Wallet</b>\n"
+        f"{profile} <b>Profile</b>\n"
+        f"{support} <b>Support</b>\n\n"
+        f"{choose} <b>Choose an option below</b>"
+    )
+
+
+# =============================================================================
 #   START & MENU
-# ══════════════════════════════════════════════════════════
+# =============================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -63,21 +87,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if context.args and context.args[0].startswith('ref_'):
             try:
                 ref_id = int(context.args[0].split('_')[1])
-                if ref_id != user.id: database.add_referral(ref_id)
-            except: pass
+                if ref_id != user.id:
+                    database.add_referral(ref_id)
+            except Exception:
+                pass
 
-    text = (
-        f"{ce('welcome_star')} <b>Welcome to Bunny Tools!</b>\n\n"
-        f"Hey <b>{html_escape(user.first_name or 'there')}</b> 👋\n\n"
-        f"Choose an option below to get started:"
-    )
-    
+    text = build_start_message()
     markup = utils.main_menu_keyboard()
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode='HTML')
     else:
         await update.message.reply_text(text, reply_markup=markup, parse_mode='HTML')
     return ConversationHandler.END
+
 
 async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = database.get_user(update.effective_user.id)
@@ -94,6 +116,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.callback_query.edit_message_text(text, reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
 
+
 async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orders = database.get_user_orders(update.effective_user.id)
     if not orders:
@@ -102,12 +125,18 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = f"{ce('order_details')} <b>Purchase History</b>\n\n"
         for o in orders[:10]:
             p = database.get_product(o[2])
-            text += f"<b>Order #{o[0]}</b>\n{html_escape(p[1] if p else 'N/A')}\n{o[3]} qty | {o[4]} USDT | {o[6]}\n━━━━━━━━━━━━━━━━━━\n"
+            text += (
+                f"<b>Order #{o[0]}</b>\n"
+                f"{html_escape(p[1] if p else 'N/A')}\n"
+                f"{o[3]} qty | {o[4]} USDT | {o[6]}\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+            )
     await update.callback_query.edit_message_text(text, reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
 
-# ══════════════════════════════════════════════════════════
+
+# =============================================================================
 #   CALLBACK HANDLER
-# ══════════════════════════════════════════════════════════
+# =============================================================================
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -115,10 +144,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     uid = update.effective_user.id
     await query.answer()
 
-    if data == 'main_menu': return await start(update, context)
-    if data == 'profile': await show_profile(update, context); return ConversationHandler.END
-    if data == 'purchase_history': await show_history(update, context); return ConversationHandler.END
-    
+    if data == 'main_menu':
+        return await start(update, context)
+    if data == 'profile':
+        await show_profile(update, context)
+        return ConversationHandler.END
+    if data == 'purchase_history':
+        await show_history(update, context)
+        return ConversationHandler.END
+
     if data == 'products':
         ps = database.get_all_products()
         await query.edit_message_text("📦 <b>Available Products:</b>", reply_markup=utils.products_list_keyboard(ps), parse_mode='HTML')
@@ -128,9 +162,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user = database.get_user(uid)
         txs = database.get_user_transactions(uid)
         msg = f"{ce('wallet')} <b>My Wallet</b>\n\nBalance: <b>{user[3]} USDT</b>\n\n<b>Recent Transactions:</b>\n"
-        if not txs: msg += "No transactions found.\n"
+        if not txs:
+            msg += "No transactions found.\n"
         else:
-            for t in txs[:5]: msg += f"{'+' if t[3]>0 else ''}{t[3]} USDT | {t[2]} | {str(t[4]).split(' ')[0]}\n"
+            for t in txs[:5]:
+                msg += f"{'+' if t[3] > 0 else ''}{t[3]} USDT | {t[2]} | {str(t[4]).split(' ')[0]}\n"
         await query.edit_message_text(msg, reply_markup=utils.wallet_options_keyboard(), parse_mode='HTML')
         return ConversationHandler.END
 
@@ -158,13 +194,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if data == 'freebies':
         cfg = database.get_freebies_config()
-        if not cfg[3]: await query.answer("❌ Disabled.", show_alert=True); return ConversationHandler.END
+        if not cfg[3]:
+            await query.answer("❌ Disabled.", show_alert=True)
+            return ConversationHandler.END
         await query.edit_message_text("🎁 <b>Freebies</b>", reply_markup=utils.freebies_keyboard(database.get_freebie_products(), cfg), parse_mode='HTML')
         return ConversationHandler.END
 
     if data.startswith('claim_freebie_'):
         pid = int(data.split('_')[2])
-        if database.has_user_received_freebie(uid, pid): await query.answer("❌ Already claimed!", show_alert=True); return ConversationHandler.END
+        if database.has_user_received_freebie(uid, pid):
+            await query.answer("❌ Already claimed!", show_alert=True)
+            return ConversationHandler.END
         context.user_data.update({'current_product_id': pid, 'quantity': 1, 'total_amount': 0})
         await deliver_product(update, context, 'Freebie')
         return ConversationHandler.END
@@ -178,13 +218,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if data == 'order_now':
         pid = context.user_data.get('current_product_id')
         p = database.get_product(pid)
-        if not p or p[4] <= 0: await query.answer("❌ Out of stock!", show_alert=True); return ConversationHandler.END
+        if not p or p[4] <= 0:
+            await query.answer("❌ Out of stock!", show_alert=True)
+            return ConversationHandler.END
         await query.edit_message_text(f"🔢 <b>{p[1]}</b>\n\nQuantity (1-{p[4]}):", reply_markup=utils.quantity_selection_keyboard(), parse_mode='HTML')
         return QUANTITY
 
     if data == 'back_to_product_details':
         pid = context.user_data.get('current_product_id')
-        if not pid: return await start(update, context)
+        if not pid:
+            return await start(update, context)
         await query.edit_message_text(products_helper.get_product_details_message(pid), reply_markup=utils.product_details_keyboard(), parse_mode='HTML')
         return ConversationHandler.END
 
@@ -205,45 +248,79 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
 
     if data == 'confirm_wallet_payment':
-        pid, qty, total = context.user_data.get('current_product_id'), context.user_data.get('quantity'), context.user_data.get('total_amount')
+        pid = context.user_data.get('current_product_id')
+        qty = context.user_data.get('quantity')
+        total = context.user_data.get('total_amount')
         success, msg = payment.process_wallet_payment(uid, None, pid, qty, total)
-        if success: await deliver_product(update, context, 'Wallet')
-        else: await query.edit_message_text(msg, reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
+        if success:
+            await deliver_product(update, context, 'Wallet')
+        else:
+            await query.edit_message_text(msg, reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
         return ConversationHandler.END
 
-    if data == 'cancel_order': return await start(update, context)
+    if data == 'cancel_order':
+        return await start(update, context)
     return ConversationHandler.END
 
-# ══════════════════════════════════════════════════════════
+
+# =============================================================================
 #   ADMIN CALLBACKS
-# ══════════════════════════════════════════════════════════
+# =============================================================================
 
 async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    if not admin.is_admin(update.effective_user.id): return ConversationHandler.END
+    if not admin.is_admin(update.effective_user.id):
+        return ConversationHandler.END
     await query.answer()
     data = query.data
 
-    if data == 'admin_panel_back': await query.edit_message_text("👑 <b>Admin Panel</b>", reply_markup=utils.admin_main_keyboard(), parse_mode='HTML'); return ConversationHandler.END
-    if data == 'admin_view_stats': await query.edit_message_text(admin.get_stats_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
-    elif data == 'admin_view_products': await query.edit_message_text(admin.get_all_products_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
-    elif data == 'admin_view_all_orders': await query.edit_message_text(admin.get_all_orders_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
-    elif data == 'admin_withdraw_requests': await query.edit_message_text(admin.get_withdrawal_requests_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
-    elif data == 'admin_order_details': await query.edit_message_text("🔎 Send Order ID:", reply_markup=utils.admin_cancel_keyboard()); return ADMIN_ORDER_DETAILS
-    elif data == 'admin_add_product': await query.edit_message_text("➕ Format: `Name | Duration | Price | Desc | Note | Emoji`", reply_markup=utils.admin_cancel_keyboard()); return ADMIN_ADD_PRODUCT
-    elif data == 'admin_add_items': await query.edit_message_text("📦 Format: `PID[{f:v}]`", reply_markup=utils.admin_cancel_keyboard()); return ADMIN_ADD_ITEMS
-    elif data == 'admin_edit_price': await query.edit_message_text("💰 Send: `PID | Price`", reply_markup=utils.admin_cancel_keyboard()); return ADMIN_EDIT_PRICE
-    elif data == 'admin_edit_stock': await query.edit_message_text("📦 Send: `PID | Stock`", reply_markup=utils.admin_cancel_keyboard()); return ADMIN_EDIT_STOCK
-    elif data == 'admin_add_balance': await query.edit_message_text("💰 Send: `UID | Amt`", reply_markup=utils.admin_cancel_keyboard()); return ADMIN_ADD_BALANCE
-    elif data == 'admin_broadcast': await query.edit_message_text("📢 Send message:", reply_markup=utils.admin_cancel_keyboard()); return ADMIN_BROADCAST
-    elif data == 'admin_delete_product': await query.edit_message_text("❌ Send PID:", reply_markup=utils.admin_cancel_keyboard()); return ADMIN_DELETE_PRODUCT
-    elif data == 'admin_freebies_settings': await query.edit_message_text(admin.get_freebies_settings_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown'); return ADMIN_SETUP_FREEBIES
-    elif data == 'admin_freebie_products': await query.edit_message_text(admin.get_freebie_products_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown'); return ADMIN_TOGGLE_FREEBIE
+    if data == 'admin_panel_back':
+        await query.edit_message_text("👑 <b>Admin Panel</b>", reply_markup=utils.admin_main_keyboard(), parse_mode='HTML')
+        return ConversationHandler.END
+    if data == 'admin_view_stats':
+        await query.edit_message_text(admin.get_stats_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
+    elif data == 'admin_view_products':
+        await query.edit_message_text(admin.get_all_products_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
+    elif data == 'admin_view_all_orders':
+        await query.edit_message_text(admin.get_all_orders_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
+    elif data == 'admin_withdraw_requests':
+        await query.edit_message_text(admin.get_withdrawal_requests_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
+    elif data == 'admin_order_details':
+        await query.edit_message_text("🔎 Send Order ID:", reply_markup=utils.admin_cancel_keyboard())
+        return ADMIN_ORDER_DETAILS
+    elif data == 'admin_add_product':
+        await query.edit_message_text("➕ Format: `Name | Duration | Price | Desc | Note | Emoji`", reply_markup=utils.admin_cancel_keyboard())
+        return ADMIN_ADD_PRODUCT
+    elif data == 'admin_add_items':
+        await query.edit_message_text("📦 Format: `PID[{f:v}]`", reply_markup=utils.admin_cancel_keyboard())
+        return ADMIN_ADD_ITEMS
+    elif data == 'admin_edit_price':
+        await query.edit_message_text("💰 Send: `PID | Price`", reply_markup=utils.admin_cancel_keyboard())
+        return ADMIN_EDIT_PRICE
+    elif data == 'admin_edit_stock':
+        await query.edit_message_text("📦 Send: `PID | Stock`", reply_markup=utils.admin_cancel_keyboard())
+        return ADMIN_EDIT_STOCK
+    elif data == 'admin_add_balance':
+        await query.edit_message_text("💰 Send: `UID | Amt`", reply_markup=utils.admin_cancel_keyboard())
+        return ADMIN_ADD_BALANCE
+    elif data == 'admin_broadcast':
+        await query.edit_message_text("📢 Send message:", reply_markup=utils.admin_cancel_keyboard())
+        return ADMIN_BROADCAST
+    elif data == 'admin_delete_product':
+        await query.edit_message_text("❌ Send PID:", reply_markup=utils.admin_cancel_keyboard())
+        return ADMIN_DELETE_PRODUCT
+    elif data == 'admin_freebies_settings':
+        await query.edit_message_text(admin.get_freebies_settings_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
+        return ADMIN_SETUP_FREEBIES
+    elif data == 'admin_freebie_products':
+        await query.edit_message_text(admin.get_freebie_products_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
+        return ADMIN_TOGGLE_FREEBIE
     return ConversationHandler.END
 
-# ══════════════════════════════════════════════════════════
+
+# =============================================================================
 #   INPUT HANDLERS
-# ══════════════════════════════════════════════════════════
+# =============================================================================
 
 async def handle_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
@@ -253,35 +330,69 @@ async def handle_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not p or qty <= 0 or qty > p[4]:
             await update.message.reply_text(f"❌ Invalid. Max: {p[4] if p else 0}")
             return QUANTITY
-        context.user_data.update({'quantity': qty, 'total_amount': p[3]*qty})
-        text = f"✅ <b>Order Summary</b>\n\nProduct: {p[1]}\nQty: {qty}\nTotal: <b>{context.user_data['total_amount']} USDT</b>\n\nSelect Payment:"
+        context.user_data.update({'quantity': qty, 'total_amount': p[3] * qty})
+        text = (
+            f"✅ <b>Order Summary</b>\n\n"
+            f"Product: {p[1]}\n"
+            f"Qty: {qty}\n"
+            f"Total: <b>{context.user_data['total_amount']} USDT</b>\n\n"
+            f"Select Payment:"
+        )
         await update.message.reply_text(text, reply_markup=utils.payment_method_keyboard(), parse_mode='HTML')
         return ConversationHandler.END
-    except: await update.message.reply_text("❌ Send a valid number."); return QUANTITY
+    except Exception:
+        await update.message.reply_text("❌ Send a valid number.")
+        return QUANTITY
+
 
 async def handle_order_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     o = database.get_order_by_id(update.message.text)
-    if not o: await update.message.reply_text("❌ Not found."); return ConversationHandler.END
+    if not o:
+        await update.message.reply_text("❌ Not found.")
+        return ConversationHandler.END
     p = database.get_product(o[2])
-    text = f"🔎 <b>Order</b>\n\nID: <code>{o[0]}</code>\nProduct: {p[1] if p else 'N/A'}\nQty: {o[3]} | {o[4]} USDT | {o[6]}\n\n<b>Delivery:</b>\n"
+    text = (
+        f"🔎 <b>Order</b>\n\n"
+        f"ID: <code>{o[0]}</code>\n"
+        f"Product: {p[1] if p else 'N/A'}\n"
+        f"Qty: {o[3]} | {o[4]} USDT | {o[6]}\n\n"
+        f"<b>Delivery:</b>\n"
+    )
     for i, item in enumerate(json.loads(o[8]), 1):
         text += f"\nItem #{i}:\n" + "\n".join([f"{k}: <code>{v}</code>" for k, v in item.items()]) + "\n"
     await update.message.reply_text(text, reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
     return ConversationHandler.END
 
+
 async def handle_deposit_txid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("✅ <b>Request Sent!</b> Admin will verify soon.", reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
-    await context.bot.send_message(config.ADMIN_ID, f"🔔 <b>Deposit</b>\nUser: {update.effective_user.id}\nTXID: <code>{update.message.text}</code>", parse_mode='HTML')
+    await context.bot.send_message(
+        config.ADMIN_ID,
+        f"🔔 <b>Deposit</b>\nUser: {update.effective_user.id}\nTXID: <code>{update.message.text}</code>",
+        parse_mode='HTML'
+    )
     return ConversationHandler.END
+
 
 async def handle_binance_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    success, msg = payment.process_binance_payment(update.effective_user.id, None, context.user_data.get('current_product_id'), context.user_data.get('quantity'), context.user_data.get('total_amount'), update.message.text)
-    if success: await deliver_product(update, context, 'Binance')
-    else: await update.message.reply_text(msg, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
+    success, msg = payment.process_binance_payment(
+        update.effective_user.id,
+        None,
+        context.user_data.get('current_product_id'),
+        context.user_data.get('quantity'),
+        context.user_data.get('total_amount'),
+        update.message.text
+    )
+    if success:
+        await deliver_product(update, context, 'Binance')
+    else:
+        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
     return ConversationHandler.END
 
+
 async def deliver_product(update: Update, context: ContextTypes.DEFAULT_TYPE, method: str):
-    pid, qty = context.user_data.get('current_product_id'), context.user_data.get('quantity')
+    pid = context.user_data.get('current_product_id')
+    qty = context.user_data.get('quantity')
     items = database.get_unsold_items(pid, qty)
     if len(items) < qty:
         msg = update.callback_query.message if update.callback_query else update.message
@@ -294,9 +405,11 @@ async def deliver_product(update: Update, context: ContextTypes.DEFAULT_TYPE, me
     database.update_product_stock(pid, -qty)
     p = database.get_product(pid)
     text = f"✅ <b>Delivered!</b>\n\nOrder: <code>{oid}</code>\nProduct: <b>{p[1]}</b>\n\n"
-    for i, d in enumerate(data, 1): text += f"<b>Item #{i}:</b>\n" + "\n".join([f"{k}: <code>{v}</code>" for k, v in d.items()]) + "\n"
+    for i, d in enumerate(data, 1):
+        text += f"<b>Item #{i}:</b>\n" + "\n".join([f"{k}: <code>{v}</code>" for k, v in d.items()]) + "\n"
     msg = update.callback_query.message if update.callback_query else update.message
     await msg.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
+
 
 # Admin Input Handlers
 async def h_admin_add_p(u, c):
@@ -304,64 +417,82 @@ async def h_admin_add_p(u, c):
         d = admin.parse_product_block(u.message.text)
         r = admin.add_product_admin(d['name'], d['duration'], d['price'], d['description'], d['note'], d['emoji_id'])
         await u.message.reply_text(r, reply_markup=utils.admin_main_keyboard())
-    except Exception as e: await u.message.reply_text(f"❌ {e}")
+    except Exception as e:
+        await u.message.reply_text(f"❌ {e}")
     return ConversationHandler.END
+
 
 async def h_admin_add_i(u, c):
     try:
         s = admin.parse_stock_bulk_format(u.message.text)
         r = admin.add_stock_bulk_admin(s)
         await u.message.reply_text(r, reply_markup=utils.admin_main_keyboard())
-    except Exception as e: await u.message.reply_text(f"❌ {e}")
+    except Exception as e:
+        await u.message.reply_text(f"❌ {e}")
     return ConversationHandler.END
+
 
 async def h_admin_edit_p(u, c):
     try:
         pid, pr = u.message.text.split(' | ')
         r = admin.edit_product_price(int(pid), float(pr))
         await u.message.reply_text(r, reply_markup=utils.admin_main_keyboard())
-    except: await u.message.reply_text("❌ Format: PID | Price")
+    except Exception:
+        await u.message.reply_text("❌ Format: PID | Price")
     return ConversationHandler.END
+
 
 async def h_admin_edit_s(u, c):
     try:
         pid, st = u.message.text.split(' | ')
         r = admin.edit_product_stock(int(pid), int(st))
         await u.message.reply_text(r, reply_markup=utils.admin_main_keyboard())
-    except: await u.message.reply_text("❌ Format: PID | Stock")
+    except Exception:
+        await u.message.reply_text("❌ Format: PID | Stock")
     return ConversationHandler.END
+
 
 async def h_admin_add_b(u, c):
     try:
         uid, am = u.message.text.split(' | ')
         r = admin.add_balance_admin(int(uid), float(am))
         await u.message.reply_text(r, reply_markup=utils.admin_main_keyboard())
-    except: await u.message.reply_text("❌ Format: UID | Amt")
+    except Exception:
+        await u.message.reply_text("❌ Format: UID | Amt")
     return ConversationHandler.END
+
 
 async def h_admin_broadcast(u, c):
     users = database.get_all_users()
     sent = 0
     for user in users:
-        try: await c.bot.send_message(user[0], u.message.text, parse_mode='HTML'); sent += 1
-        except: pass
+        try:
+            await c.bot.send_message(user[0], u.message.text, parse_mode='HTML')
+            sent += 1
+        except Exception:
+            pass
     await u.message.reply_text(f"✅ Sent to {sent}/{len(users)} users.", reply_markup=utils.admin_main_keyboard())
     return ConversationHandler.END
+
 
 async def h_admin_del_p(u, c):
     try:
         r = admin.delete_product_admin(int(u.message.text))
         await u.message.reply_text(r, reply_markup=utils.admin_main_keyboard())
-    except: await u.message.reply_text("❌ Send valid PID")
+    except Exception:
+        await u.message.reply_text("❌ Send valid PID")
     return ConversationHandler.END
+
 
 async def h_admin_freebie_s(u, c):
     try:
         d = u.message.text.split(' | ')
         database.update_freebies_config(int(d[1]), d[2], d[3].lower() == 'enable')
         await u.message.reply_text("✅ Updated!", reply_markup=utils.admin_main_keyboard())
-    except: await u.message.reply_text("❌ Error.")
+    except Exception:
+        await u.message.reply_text("❌ Error.")
     return ConversationHandler.END
+
 
 async def h_admin_freebie_t(u, c):
     try:
@@ -369,31 +500,50 @@ async def h_admin_freebie_t(u, c):
         p = database.get_product(pid)
         database.toggle_product_freebie(pid, not p[10])
         await u.message.reply_text("✅ Toggled!", reply_markup=utils.admin_main_keyboard())
-    except: await u.message.reply_text("❌ Error.")
+    except Exception:
+        await u.message.reply_text("❌ Error.")
     return ConversationHandler.END
+
 
 async def h_admin_order_d(u, c):
     o = database.get_order_by_id(u.message.text)
-    if not o: await u.message.reply_text("❌ Not found."); return ConversationHandler.END
+    if not o:
+        await u.message.reply_text("❌ Not found.")
+        return ConversationHandler.END
     p = database.get_product(o[2])
-    text = f"🔎 <b>Admin Order</b>\n\nID: <code>{o[0]}</code>\nUser: <code>{o[1]}</code>\nProduct: {p[1] if p else 'N/A'}\nQty: {o[3]} | {o[4]} USDT | {o[6]}\n\n<b>Delivery:</b>\n"
+    text = (
+        f"🔎 <b>Admin Order</b>\n\n"
+        f"ID: <code>{o[0]}</code>\n"
+        f"User: <code>{o[1]}</code>\n"
+        f"Product: {p[1] if p else 'N/A'}\n"
+        f"Qty: {o[3]} | {o[4]} USDT | {o[6]}\n\n"
+        f"<b>Delivery:</b>\n"
+    )
     for i, item in enumerate(json.loads(o[8]), 1):
         text += f"\nItem #{i}:\n" + "\n".join([f"{k}: <code>{v}</code>" for k, v in item.items()]) + "\n"
     await u.message.reply_text(text, reply_markup=utils.admin_main_keyboard(), parse_mode='HTML')
     return ConversationHandler.END
 
-# ══════════════════════════════════════════════════════════
+
+# =============================================================================
 #   MAIN
-# ══════════════════════════════════════════════════════════
+# =============================================================================
 
 def main():
     database.init_db()
     app = ApplicationBuilder().token(config.TOKEN).build()
-    
+
     conv = ConversationHandler(
         entry_points=[
             CommandHandler('start', start),
-            CommandHandler('admin', lambda u, c: u.message.reply_text("👑 <b>Admin Panel</b>", reply_markup=utils.admin_main_keyboard(), parse_mode='HTML') if admin.is_admin(u.effective_user.id) else None),
+            CommandHandler(
+                'admin',
+                lambda u, c: u.message.reply_text(
+                    "👑 <b>Admin Panel</b>",
+                    reply_markup=utils.admin_main_keyboard(),
+                    parse_mode='HTML'
+                ) if admin.is_admin(u.effective_user.id) else None
+            ),
             CallbackQueryHandler(admin_button_handler, pattern='^admin_'),
             CallbackQueryHandler(button_handler),
         ],
@@ -417,12 +567,13 @@ def main():
         per_message=False,
         allow_reentry=True
     )
-    
+
     app.add_handler(conv)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, start)) # Final fallback
-    
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, start))
+
     print("Bot is running...")
     app.run_polling(drop_pending_updates=True)
+
 
 if __name__ == '__main__':
     main()

@@ -107,7 +107,7 @@ def main_menu_keyboard():
                 emoji_id=EMOJIS["products"][0]
             ),
             btn(
-                "Freebies 🎁",
+                "Freebies",
                 callback_data='freebies',
                 style="success",
                 emoji_id=EMOJIS["welcome_star"][0]
