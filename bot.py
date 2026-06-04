@@ -9,7 +9,7 @@ from telegram.ext import (
 )
 
 import config
-from updated_bot import database, products, payment, admin, utils
+import database, products, payment, admin, utils
 
 
 logging.basicConfig(
