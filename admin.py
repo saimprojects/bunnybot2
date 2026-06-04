@@ -11,6 +11,8 @@ def is_admin(user_id):
         return False
 
 
+
+
 def _extract_product_stock_sections(text):
     pattern = r'(\d+)\s*\[(.*?)\]'
     matches = re.findall(pattern, text, flags=re.DOTALL)
