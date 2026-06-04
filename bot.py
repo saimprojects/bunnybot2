@@ -9,8 +9,6 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes, ConversationHandler
 )
 
-#just testing hahah
-
 import config
 import database
 import admin
@@ -213,9 +211,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             parse_mode='HTML'
         )
     elif update.callback_query:
-        await context.bot.send_message(
-            chat_id=user.id,
-            text=welcome_text,
+        await update.callback_query.edit_message_text(
+            welcome_text,
             reply_markup=utils.main_menu_keyboard(),
             parse_mode='HTML'
         )
@@ -259,7 +256,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=
             parse_mode='HTML'
         )
     else:
-        await update.message.reply_text(text, parse_mode='HTML')
+        await update.message.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
 
 
 async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
@@ -292,7 +289,7 @@ async def show_purchase_history(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode='HTML'
         )
     else:
-        await update.message.reply_text(text, parse_mode='HTML')
+        await update.message.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
 
 
 def build_wallet_message(user, transactions):
@@ -358,6 +355,51 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif data == 'purchase_history':
         await show_purchase_history(update, context, edit=True)
         return ConversationHandler.END
+    elif data == 'wallet':
+        user = database.get_user(user_id)
+        transactions = database.get_user_transactions(user_id)
+        await query.edit_message_text(build_wallet_message(user, transactions), reply_markup=utils.wallet_options_keyboard(), parse_mode='HTML')
+        return ConversationHandler.END
+    elif data == 'support':
+        await query.edit_message_text(
+            (
+                f"{ce('support_center')} <b>Support Center</b>\n\n"
+                f"{ce('faq')} <b>FAQ</b> — Common questions\n"
+                f"{ce('contact')} <b>Contact Admin</b> — Message to owner\n"
+                f"{ce('announcement')} <b>Announcements</b> — Join our channel\n\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"{ce('choose_option')} Choose option:"
+            ),
+            reply_markup=utils.support_keyboard(),
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
+    elif data == 'faq':
+        await query.edit_message_text(
+            "❓ *FAQ*\n\n"
+            "*Q: How long does delivery take?*\n"
+            "A: Delivery is instant after payment confirmation.\n\n"
+            "*Q: What if my account stops working?*\n"
+            "A: Contact our support with your Order ID for assistance.\n\n"
+            "*Q: How to deposit?*\n"
+            "A: Go to Wallet -> Deposit and follow the instructions.",
+            reply_markup=utils.support_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+    elif data == 'deposit_wallet':
+        await query.edit_message_text(
+            f"💰 *Deposit Funds*\n\n"
+            f"Send USDT to this address:\n\n"
+            f"📍 `{config.BINANCE_WALLET_ADDRESS}`\n\n"
+            f"🔁 Network: {config.BINANCE_NETWORK} (USDT)\n"
+            f"💵 Minimum: 10 USDT\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"After sending, click 'I have sent the payment' and send your Transaction ID.",
+            reply_markup=utils.deposit_wallet_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
     elif data == 'order_details':
         await context.bot.send_message(chat_id=user_id, text=f"{ce('order_details')} <b>Order Details</b>\n\nPlease send Order ID:", parse_mode='HTML')
         return ORDER_DETAILS
@@ -393,13 +435,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         product = database.get_product(pid)
         context.user_data['current_product_id'] = pid
         text = f"🛍️ <b>{html_escape(product[1])}</b>\n\nPrice: <b>{product[3]} USDT</b>\nStock: <b>{product[4]}</b>\n\nDescription:\n{product[6]}\n\nNote: {product[8]}"
-        await context.bot.send_message(chat_id=user_id, text=text, reply_markup=utils.product_details_keyboard(), parse_mode='HTML')
+        await query.edit_message_text(text=text, reply_markup=utils.product_details_keyboard(), parse_mode='HTML')
         return ConversationHandler.END
     elif data == 'order_now':
+        await query.edit_message_text("🔢 Please send the quantity you want to buy:", reply_markup=utils.quantity_selection_keyboard())
         return QUANTITY
     elif data == 'pay_binance':
-        return ConversationHandler.END
+        pid = context.user_data.get('current_product_id')
+        qty = context.user_data.get('quantity')
+        product = database.get_product(pid)
+        total = product[3] * qty
+        context.user_data['total_amount'] = total
+        await query.edit_message_text(payment.get_binance_payment_details(total), reply_markup=utils.binance_payment_keyboard(), parse_mode='HTML')
+        return BINANCE_ORDER_ID
     elif data == 'pay_wallet':
+        pid = context.user_data.get('current_product_id')
+        qty = context.user_data.get('quantity')
+        product = database.get_product(pid)
+        total = product[3] * qty
+        context.user_data['total_amount'] = total
+        await query.edit_message_text(payment.get_wallet_payment_summary(user_id, total), reply_markup=utils.wallet_payment_keyboard(), parse_mode='HTML')
+        return ConversationHandler.END
+    elif data == 'confirm_wallet_payment':
+        pid = context.user_data.get('current_product_id')
+        qty = context.user_data.get('quantity')
+        total = context.user_data.get('total_amount')
+        success, msg = payment.process_wallet_payment(user_id, None, pid, qty, total)
+        if success:
+            await deliver_product(update, context, 'Wallet')
+        else:
+            await query.edit_message_text(msg, reply_markup=utils.insufficient_balance_keyboard(), parse_mode='HTML')
+        return ConversationHandler.END
+    elif data == 'cancel_order':
+        await start(update, context)
         return ConversationHandler.END
     return ConversationHandler.END
 
@@ -418,15 +486,64 @@ async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if not admin.is_admin(update.effective_user.id): return ConversationHandler.END
     await query.answer()
     data = query.data
+    
     if data == 'admin_panel_back':
         await query.edit_message_text("👑 <b>Admin Panel</b>", reply_markup=utils.admin_main_keyboard(), parse_mode='HTML')
         return ConversationHandler.END
     elif data == 'admin_view_stats':
         await query.edit_message_text(admin.get_stats_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
         return ConversationHandler.END
+    elif data == 'admin_view_products':
+        await query.edit_message_text(admin.get_all_products_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
+        return ConversationHandler.END
+    elif data == 'admin_view_all_orders':
+        await query.edit_message_text(admin.get_all_orders_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
+        return ConversationHandler.END
+    elif data == 'admin_withdraw_requests':
+        await query.edit_message_text(admin.get_withdrawal_requests_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
+        return ConversationHandler.END
+    elif data == 'admin_order_details':
+        await query.edit_message_text("🔎 <b>Admin Order Details</b>\n\nSend Order ID:", reply_markup=utils.admin_cancel_keyboard(), parse_mode='HTML')
+        return ADMIN_ORDER_DETAILS
+    elif data == 'admin_add_product':
+        await query.edit_message_text(
+            "➕ <b>Add Product</b>\n\nFormat:\n`Name | Duration | Price | Description | Note | Sticker Emoji ID`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='HTML'
+        )
+        return ADMIN_ADD_PRODUCT
+    elif data == 'admin_bulk_add_products':
+        await query.edit_message_text(
+            "➕ <b>Bulk Add Products</b>\n\nFormat:\n`[Name | Duration | Price | Description | Note | Sticker Emoji ID] [...]`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='HTML'
+        )
+        return ADMIN_BULK_ADD_PRODUCTS
+    elif data == 'admin_add_items':
+        await query.edit_message_text(
+            "📦 <b>Add Stock/Items</b>\n\nFormat:\n`Product_ID[{field:value},{field:value}]`",
+            reply_markup=utils.admin_cancel_keyboard(),
+            parse_mode='HTML'
+        )
+        return ADMIN_ADD_ITEMS
+    elif data == 'admin_edit_price':
+        await query.edit_message_text("💰 <b>Edit Price</b>\n\nSend: `Product_ID | New_Price`", reply_markup=utils.admin_cancel_keyboard(), parse_mode='HTML')
+        return ADMIN_EDIT_PRICE
+    elif data == 'admin_edit_stock':
+        await query.edit_message_text("📦 <b>Edit Stock</b>\n\nSend: `Product_ID | New_Stock`", reply_markup=utils.admin_cancel_keyboard(), parse_mode='HTML')
+        return ADMIN_EDIT_STOCK
+    elif data == 'admin_add_balance':
+        await query.edit_message_text("💰 <b>Add Balance</b>\n\nSend: `User_ID | Amount`", reply_markup=utils.admin_cancel_keyboard(), parse_mode='HTML')
+        return ADMIN_ADD_BALANCE
+    elif data == 'admin_approve_withdrawal':
+        await query.edit_message_text("💸 <b>Approve Withdrawal</b>\n\nSend Withdrawal ID:", reply_markup=utils.admin_cancel_keyboard(), parse_mode='HTML')
+        return ADMIN_APPROVE_WITHDRAWAL
     elif data == 'admin_broadcast':
         await query.edit_message_text("📢 <b>Broadcast</b>\n\nSend message (supports [emoji_id]):", reply_markup=utils.admin_back_keyboard(), parse_mode='HTML')
         return ADMIN_BROADCAST
+    elif data == 'admin_delete_product':
+        await query.edit_message_text("❌ <b>Delete Product</b>\n\nSend Product ID:", reply_markup=utils.admin_cancel_keyboard(), parse_mode='HTML')
+        return ADMIN_DELETE_PRODUCT
     elif data == 'admin_freebies_settings':
         await query.edit_message_text(admin.get_freebies_settings_admin(), reply_markup=utils.admin_back_keyboard(), parse_mode='Markdown')
         return ADMIN_SETUP_FREEBIES
@@ -463,6 +580,173 @@ async def handle_admin_toggle_freebie(update: Update, context: ContextTypes.DEFA
     return ConversationHandler.END
 
 
+async def handle_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        qty = int(update.message.text)
+        pid = context.user_data.get('current_product_id')
+        product = database.get_product(pid)
+        
+        if qty <= 0:
+            await update.message.reply_text("❌ Quantity must be greater than 0.")
+            return QUANTITY
+        
+        if qty > product[4]:
+            await update.message.reply_text(f"❌ Not enough stock. Available: {product[4]}")
+            return QUANTITY
+            
+        context.user_data['quantity'] = qty
+        await update.message.reply_text(
+            f"✅ Quantity: {qty}\n\nSelect Payment Method:",
+            reply_markup=utils.payment_method_keyboard()
+        )
+        return ConversationHandler.END
+    except ValueError:
+        await update.message.reply_text("❌ Please send a valid number.")
+        return QUANTITY
+
+
+async def handle_order_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    order_id = update.message.text
+    order = database.get_order_by_id(order_id)
+    if not order:
+        await update.message.reply_text("❌ Order not found.")
+        return ConversationHandler.END
+    
+    product = database.get_product(order[2])
+    product_name = product[1] if product else "Unknown"
+    text = (
+        f"🔎 <b>Order Details</b>\n\n"
+        f"Order ID: <code>{order[0]}</code>\n"
+        f"Product: {product_name}\n"
+        f"Quantity: {order[3]}\n"
+        f"Amount: {order[4]} USDT\n"
+        f"Status: {order[6]}\n"
+        f"Date: {order[7]}\n\n"
+        f"<b>Delivery Data:</b>\n"
+    )
+    delivery_data = json.loads(order[8])
+    for i, data in enumerate(delivery_data, 1):
+        text += f"\n<b>Item #{i}:</b>\n{format_item_data_for_delivery(data)}\n"
+        
+    await update.message.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
+    return ConversationHandler.END
+
+
+async def handle_binance_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    binance_id = update.message.text
+    pid = context.user_data.get('current_product_id')
+    qty = context.user_data.get('quantity')
+    total = context.user_data.get('total_amount')
+    
+    success, msg = payment.process_binance_payment(update.effective_user.id, None, pid, qty, total, binance_id)
+    if success:
+        await deliver_product(update, context, 'Binance')
+    else:
+        await update.message.reply_text(msg, parse_mode='HTML')
+    return ConversationHandler.END
+
+
+async def handle_admin_order_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    order_id = update.message.text
+    order = database.get_order_by_id(order_id)
+    if not order:
+        await update.message.reply_text("❌ Order not found.")
+        return ConversationHandler.END
+    
+    product = database.get_product(order[2])
+    product_name = product[1] if product else "Unknown"
+    text = (
+        f"🔎 <b>Admin Order Details</b>\n\n"
+        f"Order ID: <code>{order[0]}</code>\n"
+        f"User ID: <code>{order[1]}</code>\n"
+        f"Product: {product_name}\n"
+        f"Quantity: {order[3]}\n"
+        f"Amount: {order[4]} USDT\n"
+        f"Status: {order[6]}\n"
+        f"Date: {order[7]}\n"
+    )
+    await update.message.reply_text(text, parse_mode='HTML', reply_markup=utils.admin_main_keyboard())
+    return ConversationHandler.END
+
+
+async def handle_admin_add_product(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        f = update.message.text.split(' | ')
+        res = admin.add_product_admin(f[0], f[1], float(f[2]), f[3], f[4], f[5])
+        await update.message.reply_text(res, parse_mode='Markdown', reply_markup=utils.admin_main_keyboard())
+    except:
+        await update.message.reply_text("❌ Invalid format.")
+    return ConversationHandler.END
+
+
+async def handle_admin_add_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        sections = admin.parse_stock_bulk_format(update.message.text)
+        res = admin.add_stock_bulk_admin(sections)
+        await update.message.reply_text(res, parse_mode='Markdown', reply_markup=utils.admin_main_keyboard())
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+    return ConversationHandler.END
+
+
+async def handle_admin_edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        f = update.message.text.split(' | ')
+        res = admin.edit_product_price(int(f[0]), float(f[1]))
+        await update.message.reply_text(res, reply_markup=utils.admin_main_keyboard())
+    except:
+        await update.message.reply_text("❌ Invalid format.")
+    return ConversationHandler.END
+
+
+async def handle_admin_edit_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        f = update.message.text.split(' | ')
+        res = admin.edit_product_stock(int(f[0]), int(f[1]))
+        await update.message.reply_text(res, reply_markup=utils.admin_main_keyboard())
+    except:
+        await update.message.reply_text("❌ Invalid format.")
+    return ConversationHandler.END
+
+
+async def handle_admin_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        f = update.message.text.split(' | ')
+        res = admin.add_balance_admin(int(f[0]), float(f[1]))
+        await update.message.reply_text(res, reply_markup=utils.admin_main_keyboard())
+    except:
+        await update.message.reply_text("❌ Invalid format.")
+    return ConversationHandler.END
+
+
+async def handle_admin_approve_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        res = admin.approve_withdrawal_admin(int(update.message.text))
+        await update.message.reply_text(res, reply_markup=utils.admin_main_keyboard())
+    except:
+        await update.message.reply_text("❌ Error.")
+    return ConversationHandler.END
+
+
+async def handle_admin_delete_product(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        res = admin.delete_product_admin(int(update.message.text))
+        await update.message.reply_text(res, reply_markup=utils.admin_main_keyboard())
+    except:
+        await update.message.reply_text("❌ Error.")
+    return ConversationHandler.END
+
+
+async def handle_admin_bulk_add_products(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        products = admin.parse_bulk_products_format(update.message.text)
+        res = admin.add_bulk_products_admin(products)
+        await update.message.reply_text(res, parse_mode='Markdown', reply_markup=utils.admin_main_keyboard())
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+    return ConversationHandler.END
+
+
 # ══════════════════════════════════════════════════════════
 #   DELIVERY & UTILS
 # ══════════════════════════════════════════════════════════
@@ -488,7 +772,11 @@ async def deliver_product(update: Update, context: ContextTypes.DEFAULT_TYPE, me
     text = f"✅ <b>Delivery Successful!</b>\n\nOrder ID: <code>{order_id}</code>\n\n"
     for i, data in enumerate(delivery_data, 1):
         text += f"<b>Item #{i}:</b>\n{format_item_data_for_delivery(data)}\n\n"
-    await context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML')
+    
+    if update.callback_query:
+        await update.callback_query.message.reply_text(text, parse_mode='HTML')
+    else:
+        await update.message.reply_text(text, parse_mode='HTML')
     await start(update, context)
 
 
@@ -503,13 +791,24 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler('start', start),
+            CallbackQueryHandler(admin_button_handler, pattern='^admin_'),
             CallbackQueryHandler(button_handler),
-            CallbackQueryHandler(admin_button_handler),
             MessageHandler(filters.TEXT & ~filters.COMMAND, reply_keyboard_handler)
         ],
         states={
-            QUANTITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: ConversationHandler.END)], # Placeholder
+            QUANTITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_quantity)],
+            ORDER_DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_order_details)],
+            BINANCE_ORDER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_binance_id)],
+            ADMIN_ORDER_DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_order_details)],
+            ADMIN_ADD_PRODUCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_add_product)],
+            ADMIN_ADD_ITEMS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_add_items)],
+            ADMIN_EDIT_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_edit_price)],
+            ADMIN_EDIT_STOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_edit_stock)],
+            ADMIN_ADD_BALANCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_add_balance)],
+            ADMIN_APPROVE_WITHDRAWAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_approve_withdrawal)],
             ADMIN_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_broadcast)],
+            ADMIN_DELETE_PRODUCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_delete_product)],
+            ADMIN_BULK_ADD_PRODUCTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_bulk_add_products)],
             ADMIN_SETUP_FREEBIES: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_setup_freebies)],
             ADMIN_TOGGLE_FREEBIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_toggle_freebie)],
         },
