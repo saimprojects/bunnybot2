@@ -6,74 +6,100 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 EMOJIS = {
     # start
-    "products": ("5456140674028019486", "."),
-    "purchase_history": ("5210956306952758910", "."),
-    "welcome_star": ("5325547803936572038", "."),
-    "choose_option": ("5406745015365943482", "."),
+    "products": ("5456140674028019486", "\U0001F6CD\uFE0F"),
+    "purchase_history": ("5210956306952758910", "\U0001F4DC"),
+    "welcome_star": ("5325547803936572038", "\u2728"),
+    "choose_option": ("5406745015365943482", "\U0001F447"),
 
     # profile
-    "profile": ("5461117441612462242", "."),
-    "id": ("5427168083074628963", "."),
-    "username": ("5260293700088511294", "."),
-    "date": ("5413879192267805083", "."),
-    "wallet": ("5409048419211682843", "."),
-    "box": ("5231012545799666522", "."),
-    "gift": ("5217822164362739968", "."),
-    "link": ("5305265301917549162", "."),
+    "profile": ("5461117441612462242", "\U0001F464"),
+    "id": ("5427168083074628963", "\U0001F194"),
+    "username": ("5260293700088511294", "\U0001F4DB"),
+    "date": ("5413879192267805083", "\U0001F4C5"),
+    "wallet": ("5409048419211682843", "\U0001F4B0"),
+    "box": ("5231012545799666522", "\U0001F4E6"),
+    "gift": ("5217822164362739968", "\U0001F381"),
+    "link": ("5305265301917549162", "\U0001F517"),
 
     # purchase history
-    "no_orders": ("5406683434124859552", "."),
-    "arrow": ("5416117059207572332", "."),
-    "back": ("5416117059207572332", "."),
+    "no_orders": ("5406683434124859552", "\U0001F4ED"),
+    "arrow": ("5416117059207572332", "\U0001F449"),
+    "back": ("5416117059207572332", "\U0001F519"),
 
     # wallet
-    "diamond": ("5427168083074628963", "."),
-    "stats": ("5231200819986047254", "."),
-    "deposit": ("5397916757333654639", "."),
-    "withdraw": ("5402186569006210455", "."),
+    "diamond": ("5427168083074628963", "\U0001F48E"),
+    "stats": ("5231200819986047254", "\U0001F4CA"),
+    "deposit": ("5397916757333654639", "\U0001F4B3"),
+    "withdraw": ("5402186569006210455", "\U0001F4B8"),
 
     # order details
-    "order_details": ("5231012545799666522", "."),
+    "order_details": ("5231012545799666522", "\U0001F50E"),
 
     # support
-    "support_center": ("5395695537687123235", "."),
-    "support": ("5443038326535759644", "."),
-    "faq": ("5282843764451195532", "."),
-    "contact": ("5443038326535759644", "."),
-    "announcement": ("5424818078833715060", "."),
-    "confirm": ("5206607081334906820", "."),
-    "cancel": ("5210952531676504517", "."),
-    "order": ("5406683434124859552", "."),
-    "edit_stock": ("5451882707875276247", "."),
-    "delete": ("5445267414562389170", "."),
-    "broadcast": ("5424818078833715060", "."),
-    "view_products": ("5231012545799666522", "."),
-    "users": ("5461117441612462242", "."),
-    "question": ("5282843764451195532", "."),
-    "quantity": ("5231200819986047254", "."),
-    "warning": ("5210952531676504517", "."),
-    "admin": ("5427168083074628963", "."),
-    "wallet_purse": ("5409048419211682843", "."),
-    "receipt": ("5406683434124859552", "."),
-    "clipboard": ("5451882707875276247", "."),
-    "pin": ("5305265301917549162", "."),
-    "hourglass": ("5231200819986047254", "."),
-    "puzzle": ("5231012545799666522", "."),
+    "support_center": ("5395695537687123235", "\U0001F198"),
+    "support": ("5443038326535759644", "\U0001F4AC"),
+    "faq": ("5282843764451195532", "\U0001F4D6"),
+    "contact": ("5443038326535759644", "\U0001F4AC"),
+    "announcement": ("5424818078833715060", "\U0001F514"),
+    "confirm": ("5206607081334906820", "\u2705"),
+    "cancel": ("5210952531676504517", "\u274C"),
+    "order": ("5406683434124859552", "\U0001F6D2"),
+    "edit_stock": ("5451882707875276247", "\U0001F4DD"),
+    "delete": ("5445267414562389170", "\U0001F5D1\uFE0F"),
+    "broadcast": ("5424818078833715060", "\U0001F4E2"),
+    "view_products": ("5231012545799666522", "\U0001F4E6"),
+    "users": ("5461117441612462242", "\U0001F465"),
+    "question": ("5282843764451195532", "\u2753"),
+    "quantity": ("5231200819986047254", "\U0001F522"),
+    "warning": ("5210952531676504517", "\u26A0\uFE0F"),
+    "admin": ("5427168083074628963", "\U0001F451"),
+    "wallet_purse": ("5409048419211682843", "\U0001F45B"),
+    "receipt": ("5406683434124859552", "\U0001F9FE"),
+    "clipboard": ("5451882707875276247", "\U0001F4CB"),
+    "pin": ("5305265301917549162", "\U0001F4CD"),
+    "hourglass": ("5231200819986047254", "\u23F3"),
+    "puzzle": ("5231012545799666522", "\U0001F9E9"),
 }
 
-CUSTOM_EMOJI_PLACEHOLDER = "."
+DEFAULT_CUSTOM_EMOJI_FALLBACK = "\u2754"
+CUSTOM_EMOJI_ALTS = {}
 DIVIDER = "------------------"
+
+
+def set_custom_emoji_alt(emoji_id, alt):
+    emoji_id = str(emoji_id or "").strip()
+    alt = str(alt or "").strip()
+    if not emoji_id or not alt:
+        return
+
+    CUSTOM_EMOJI_ALTS[emoji_id] = alt
+
+    for name, (stored_id, _) in list(EMOJIS.items()):
+        if str(stored_id) == emoji_id:
+            EMOJIS[name] = (stored_id, alt)
+
+
+def configured_custom_emoji_ids():
+    seen = set()
+    ids = []
+    for emoji_id, _ in EMOJIS.values():
+        emoji_id = str(emoji_id or "").strip()
+        if emoji_id and emoji_id.lower() != "none" and emoji_id not in seen:
+            seen.add(emoji_id)
+            ids.append(emoji_id)
+    return ids
 
 
 def tg(emoji_id, fallback=None):
     emoji_id = str(emoji_id or "").strip()
+    fallback = CUSTOM_EMOJI_ALTS.get(emoji_id) or fallback or DEFAULT_CUSTOM_EMOJI_FALLBACK
 
     if not emoji_id or emoji_id.lower() == "none":
         return html_escape(str(fallback or ""))
 
     return (
         f'<tg-emoji emoji-id="{html_escape(emoji_id, quote=True)}">'
-        f'{CUSTOM_EMOJI_PLACEHOLDER}'
+        f'{html_escape(str(fallback))}'
         f'</tg-emoji>'
     )
 

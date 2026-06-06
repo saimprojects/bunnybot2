@@ -119,6 +119,53 @@ def get_freebies_channel_target():
     return None
 
 
+def all_known_custom_emoji_ids():
+    ids = []
+    seen = set()
+
+    for emoji_id in utils.configured_custom_emoji_ids():
+        if emoji_id not in seen:
+            seen.add(emoji_id)
+            ids.append(emoji_id)
+
+    try:
+        for product in database.get_all_products():
+            emoji_id = str(product[9] if len(product) > 9 else "" or "").strip()
+            if emoji_id and emoji_id.lower() != "none" and emoji_id not in seen:
+                seen.add(emoji_id)
+                ids.append(emoji_id)
+    except Exception:
+        pass
+
+    return ids
+
+
+async def sync_custom_emoji_alts(bot):
+    ids = all_known_custom_emoji_ids()
+    if not ids:
+        return {}
+
+    stickers = await bot.get_custom_emoji_stickers(ids[:200])
+    result = {}
+
+    for sticker in stickers:
+        emoji_id = str(getattr(sticker, "custom_emoji_id", "") or "").strip()
+        alt = str(getattr(sticker, "emoji", "") or "").strip()
+        if emoji_id and alt:
+            utils.set_custom_emoji_alt(emoji_id, alt)
+            result[emoji_id] = alt
+
+    return result
+
+
+async def post_init(application):
+    try:
+        synced = await sync_custom_emoji_alts(application.bot)
+        logger.info("Synced %s custom emoji alt values.", len(synced))
+    except Exception as e:
+        logger.warning("Custom emoji alt sync failed: %s", e)
+
+
 async def has_joined_freebies_channel(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
     target = get_freebies_channel_target()
     if not target:
@@ -240,11 +287,44 @@ async def emoji_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not admin.is_admin(update.effective_user.id):
         return
 
-    lines = ["<b>Custom Emoji Test</b>", ""]
+    try:
+        stickers_by_id = await sync_custom_emoji_alts(context.bot)
+    except Exception as e:
+        stickers_by_id = {}
+        await update.message.reply_text(
+            f"{ce('warning')} Could not fetch custom emoji sticker data: {html_escape(str(e))}",
+            parse_mode=ParseMode.HTML
+        )
+
+    lines = ["<b>Custom Emoji Render Test</b>", ""]
     for name, (emoji_id, _) in utils.EMOJIS.items():
         lines.append(f"{ce(name)} <code>{html_escape(name)}</code> - <code>{html_escape(str(emoji_id))}</code>")
 
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+    sent = await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+
+    rendered_ids = set()
+    for entity in sent.entities or []:
+        entity_type = str(getattr(entity, "type", "")).lower()
+        if entity_type == "custom_emoji" or entity_type.endswith("custom_emoji"):
+            rendered_ids.add(str(getattr(entity, "custom_emoji_id", "") or ""))
+
+    report = [
+        "<b>Custom Emoji Entity Report</b>",
+        f"Fetched sticker IDs: <code>{len(stickers_by_id)}</code>",
+        f"Entities accepted in sent message: <code>{len(rendered_ids)}</code>",
+        "",
+    ]
+
+    for name, (emoji_id, fallback) in utils.EMOJIS.items():
+        emoji_id = str(emoji_id)
+        status = "OK" if emoji_id in rendered_ids else "NOT_RENDERED"
+        alt = utils.CUSTOM_EMOJI_ALTS.get(emoji_id) or fallback
+        report.append(
+            f"{html_escape(status)} - <code>{html_escape(name)}</code> "
+            f"alt=<code>{html_escape(str(alt))}</code> id=<code>{html_escape(emoji_id)}</code>"
+        )
+
+    await update.message.reply_text("\n".join(report), parse_mode=ParseMode.HTML)
 
 
 # =============================================================================
@@ -812,7 +892,7 @@ async def h_admin_order_d(u, c):
 
 def main():
     database.init_db()
-    app = ApplicationBuilder().token(config.TOKEN).build()
+    app = ApplicationBuilder().token(config.TOKEN).post_init(post_init).build()
 
     conv = ConversationHandler(
         entry_points=[
