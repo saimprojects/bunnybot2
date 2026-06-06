@@ -721,7 +721,15 @@ async def deliver_product(update: Update, context: ContextTypes.DEFAULT_TYPE, me
     for i, d in enumerate(data, 1):
         text += f"<b>Item #{i}:</b>\n" + html_code_lines(d) + "\n"
     msg = update.callback_query.message if update.callback_query else update.message
-    await msg.reply_text(text, parse_mode='HTML', reply_markup=utils.main_menu_keyboard())
+    await msg.reply_text(text, parse_mode=ParseMode.HTML)
+
+    chat_id = update.effective_chat.id if update.effective_chat else msg.chat_id
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=build_start_message(),
+        reply_markup=utils.main_menu_keyboard(),
+        parse_mode=ParseMode.HTML
+    )
 
 
 # Admin Input Handlers
