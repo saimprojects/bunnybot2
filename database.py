@@ -4,6 +4,14 @@ import datetime
 import json
 import config
 
+def _optional_int(value):
+    try:
+        if value is None or str(value).strip() == "":
+            return None
+        return int(str(value).strip())
+    except Exception:
+        return None
+
 def get_connection():
     # If DATABASE_URL is provided, use it directly
     if config.DATABASE_URL:
@@ -103,6 +111,19 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS verified_payments (
+            transaction_id TEXT PRIMARY KEY,
+            user_id BIGINT,
+            amount REAL,
+            currency TEXT,
+            purpose TEXT,
+            order_id TEXT,
+            verified_date TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
     
     # Freebies configuration table
     cursor.execute('''
@@ -118,6 +139,21 @@ def init_db():
     cursor.execute("SELECT COUNT(*) FROM freebies_config")
     if cursor.fetchone()[0] == 0:
         cursor.execute("INSERT INTO freebies_config (is_enabled) VALUES (FALSE)")
+
+    env_channel_id = _optional_int(getattr(config, "FREEBIES_CHANNEL_ID", ""))
+    env_channel_link = getattr(config, "FREEBIES_CHANNEL_LINK", "") or None
+
+    if env_channel_id is not None or env_channel_link:
+        cursor.execute(
+            '''
+            UPDATE freebies_config
+            SET channel_id = COALESCE(%s, channel_id),
+                channel_link = COALESCE(%s, channel_link),
+                is_enabled = %s
+            WHERE id = 1
+            ''',
+            (env_channel_id, env_channel_link, bool(getattr(config, "FREEBIES_ENABLED", True)))
+        )
 
     # Products marked as freebies
     cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_freebie BOOLEAN DEFAULT FALSE")
@@ -213,6 +249,25 @@ def set_product_price(product_id, new_price):
     conn.commit()
     conn.close()
 
+def update_product_details(product_id, name, duration, price, description, note, emoji_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        UPDATE products
+        SET name = %s,
+            duration = %s,
+            price = %s,
+            description = %s,
+            note = %s,
+            emoji_id = %s
+        WHERE id = %s
+        ''',
+        (name, duration, price, description, note, emoji_id, product_id)
+    )
+    conn.commit()
+    conn.close()
+
 def delete_product(product_id):
     conn = get_connection()
     cursor = conn.cursor()
@@ -278,6 +333,32 @@ def get_user_transactions(user_id):
     transactions = cursor.fetchall()
     conn.close()
     return transactions
+
+def is_payment_reference_used(transaction_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM verified_payments WHERE transaction_id = %s', (str(transaction_id),))
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count > 0
+
+def record_verified_payment(transaction_id, user_id, amount, currency, purpose, order_id=None):
+    conn = get_connection()
+    cursor = conn.cursor()
+    verified_date = datetime.datetime.now()
+    cursor.execute(
+        '''
+        INSERT INTO verified_payments
+        (transaction_id, user_id, amount, currency, purpose, order_id, verified_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (transaction_id) DO NOTHING
+        ''',
+        (str(transaction_id), user_id, amount, currency, purpose, order_id, verified_date)
+    )
+    inserted = cursor.rowcount == 1
+    conn.commit()
+    conn.close()
+    return inserted
 
 def add_unsold_item(product_id, item_data, password=None):
     if isinstance(item_data, dict):
@@ -347,6 +428,78 @@ def get_unsold_count(product_id):
     count = cursor.fetchone()[0]
     conn.close()
     return count
+
+def get_product_sold_count(product_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM unsold_items WHERE product_id = %s AND is_sold = 1', (product_id,))
+    sold_items = cursor.fetchone()[0] or 0
+    cursor.execute(
+        '''
+        SELECT COALESCE(SUM(quantity), 0)
+        FROM orders
+        WHERE product_id = %s AND status = 'Confirmed'
+        ''',
+        (product_id,)
+    )
+    sold_orders = cursor.fetchone()[0] or 0
+    conn.close()
+    return int(max(sold_items, sold_orders))
+
+def get_stock_items_for_edit(product_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        SELECT id, email, password, item_data
+        FROM unsold_items
+        WHERE product_id = %s AND is_sold = 0
+        ORDER BY id ASC
+        ''',
+        (product_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    items = []
+    for row in rows:
+        item_id, email, password, item_data = row
+        if item_data:
+            try:
+                data = json.loads(item_data)
+            except Exception:
+                data = {"email": email, "password": password}
+        else:
+            data = {"email": email, "password": password}
+        items.append({"id": item_id, "data": data})
+    return items
+
+def replace_unsold_stock_items(product_id, items_data):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM unsold_items WHERE product_id = %s AND is_sold = 0', (product_id,))
+
+    inserted = 0
+    for item_data in items_data:
+        if isinstance(item_data, dict):
+            data_dict = item_data
+            email_value = data_dict.get("email", "")
+            password_value = data_dict.get("password", "")
+        else:
+            data_dict = {"email": item_data, "password": ""}
+            email_value = item_data
+            password_value = ""
+
+        cursor.execute(
+            'INSERT INTO unsold_items (product_id, email, password, item_data) VALUES (%s, %s, %s, %s)',
+            (product_id, email_value, password_value, json.dumps(data_dict))
+        )
+        inserted += 1
+
+    cursor.execute('UPDATE products SET stock = %s WHERE id = %s', (inserted, product_id))
+    conn.commit()
+    conn.close()
+    return inserted
 
 def create_withdrawal_request(user_id, amount, address):
     conn = get_connection()

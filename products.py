@@ -48,6 +48,7 @@ def get_product_details_message(product_id):
     note = product[8]
     emoji_id = product[9]
     is_freebie = product[10] if len(product) > 10 else False
+    sold_count = database.get_product_sold_count(pid)
 
     product_icon = get_product_icon(emoji_id)
 
@@ -58,6 +59,7 @@ def get_product_details_message(product_id):
         f"{ce('date')} <b>Duration:</b> {safe(duration)}\n"
         f"{ce('wallet')} <b>Price:</b> {safe(price)} USDT\n"
         f"{ce('box')} <b>Stock Available:</b> {safe(stock)}\n\n"
+        f"{ce('stats')} <b>Sold:</b> {safe(sold_count)} accounts\n\n"
 
         f"{ce('faq')} <b>Description:</b>\n"
         f"{safe(description)}\n\n"

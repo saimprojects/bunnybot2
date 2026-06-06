@@ -2,6 +2,7 @@ import database
 import json
 import config
 import re
+from html import escape as html_escape
 
 
 def is_admin(user_id):
@@ -99,6 +100,102 @@ def parse_bulk_products_format(text):
     return [parse_product_block(block) for block in blocks]
 
 
+def html_code(value):
+    return f"<code>{html_escape(str(value))}</code>"
+
+
+def product_edit_format(product):
+    if not product:
+        return ""
+    return (
+        f"{product[1]} | {product[2]} | {product[3]} | "
+        f"{product[6]} | {product[8]} | {product[9] if len(product) > 9 and product[9] else 'None'}"
+    )
+
+
+def get_product_detail_edit_guide(product):
+    current_format = product_edit_format(product)
+    return (
+        "<b>Edit Product Details</b>\n\n"
+        "Change only the fields you want, but send the full line back in the same format.\n\n"
+        "<b>Format:</b>\n"
+        "<code>Name | Duration | Price | Description | Note | Sticker Emoji ID</code>\n\n"
+        "<b>Current:</b>\n"
+        f"{html_code(current_format)}\n\n"
+        "<b>Example:</b>\n"
+        "<code>netflix | 3month | 7 | testing2 | testing | 1873678163871</code>"
+    )
+
+
+def edit_product_details_admin(product_id, block):
+    product = database.get_product(product_id)
+    if not product:
+        return "Product not found."
+
+    parsed = parse_product_block(block)
+    database.update_product_details(
+        product_id,
+        parsed["name"],
+        parsed["duration"],
+        parsed["price"],
+        parsed["description"],
+        parsed["note"],
+        parsed["emoji_id"]
+    )
+    return f"Product ID {product_id} details updated successfully."
+
+
+def stock_edit_format(product_id, items):
+    formatted_items = []
+    for item in items:
+        data = item.get("data", {})
+        pairs = []
+        for key, value in data.items():
+            pairs.append(f"{key}:{value}")
+        formatted_items.append("{" + ",".join(pairs) + "}")
+    return f"{product_id}[" + ",".join(formatted_items) + "]"
+
+
+def get_stock_detail_edit_guide(product_id):
+    product = database.get_product(product_id)
+    if not product:
+        return None
+
+    items = database.get_stock_items_for_edit(product_id)
+    current_format = stock_edit_format(product_id, items)
+    if not items:
+        current_format = f"{product_id}[{{email:example,password:example}}]"
+
+    return (
+        "<b>Edit Stock Details</b>\n\n"
+        "This edits only unsold stock items. Sold delivered items are not changed.\n"
+        "Send the full updated stock block back after editing.\n\n"
+        "<b>Format:</b>\n"
+        "<code>PID[{field:value},{field:value}]</code>\n\n"
+        "<b>Current:</b>\n"
+        f"{html_code(current_format)}\n\n"
+        "<b>Example:</b>\n"
+        f"<code>{product_id}[{{email:user1@example.com,password:pass1}},{{email:user2@example.com,password:pass2}}]</code>"
+    )
+
+
+def edit_stock_details_admin(product_id, text):
+    sections = parse_stock_bulk_format(text)
+    if len(sections) != 1:
+        return "Send one product stock block only."
+
+    parsed_product_id, items = sections[0]
+    if parsed_product_id != product_id:
+        return f"Product ID mismatch. Expected {product_id}, got {parsed_product_id}."
+
+    product = database.get_product(product_id)
+    if not product:
+        return "Product not found."
+
+    inserted = database.replace_unsold_stock_items(product_id, items)
+    return f"Product ID {product_id} stock details updated. Unsold stock is now {inserted}."
+
+
 def add_product_admin(name, duration, price, description, note, emoji_id):
     try:
         database.add_product(
@@ -169,6 +266,41 @@ def add_stock_bulk_admin(stock_sections):
 
     except Exception as e:
         return f"❌ Error adding stock: {e}"
+
+
+def add_freebie_stock_bulk_admin(stock_sections):
+    try:
+        total_added = 0
+        report = "*Freebie Stock Add Report:*\n\n"
+
+        for product_id, items_data in stock_sections:
+            product = database.get_product(product_id)
+            if not product:
+                report += f"Product ID `{product_id}` not found.\n"
+                continue
+
+            is_freebie = product[10] if len(product) > 10 else False
+            if not is_freebie:
+                report += f"Product ID `{product_id}` is not marked as a freebie.\n"
+                continue
+
+            added_count = 0
+            for item in items_data:
+                if item:
+                    database.add_unsold_item(product_id, item)
+                    added_count += 1
+
+            if added_count > 0:
+                database.update_product_stock(product_id, added_count)
+
+            total_added += added_count
+            report += f"Product ID `{product_id}`: Added `{added_count}` freebie items.\n"
+
+        report += f"\nTotal Added: *{total_added}*"
+        return report
+
+    except Exception as e:
+        return f"Error adding freebie stock: {e}"
 
 
 def get_all_products_admin():
@@ -387,3 +519,139 @@ def get_freebie_products_admin():
     
     message += "\nTo toggle a product as freebie, send:\n`toggle_freebie | product_id`"
     return message
+
+
+def toggle_product_freebie_admin(product_id):
+    product = database.get_product(product_id)
+    if not product:
+        return "Product not found."
+
+    current = product[10] if len(product) > 10 else False
+    database.toggle_product_freebie(product_id, not current)
+    new_status = "enabled" if not current else "disabled"
+    return f"Freebie status for product ID {product_id} is now {new_status}."
+
+
+def guide_add_product():
+    return (
+        "<b>Add Product</b>\n\n"
+        "Send one product in this full format:\n"
+        "<code>Name | Duration | Price | Description | Note | Sticker Emoji ID</code>\n\n"
+        "Example:\n"
+        "<code>netflix | 1month | 3 | testing | testing | 1873678163871</code>"
+    )
+
+
+def guide_bulk_products():
+    return (
+        "<b>Bulk Products</b>\n\n"
+        "Send each product inside square brackets.\n\n"
+        "Format:\n"
+        "<code>[Name | Duration | Price | Description | Note | Sticker Emoji ID]</code>\n\n"
+        "Example:\n"
+        "<code>[netflix | 1month | 3 | testing | testing | 1873678163871][prime | 1month | 2 | testing | testing | 1873678163871]</code>"
+    )
+
+
+def guide_add_stock():
+    return (
+        "<b>Add Stock/Items</b>\n\n"
+        "Send stock for one or more product IDs. Every item goes inside braces.\n\n"
+        "Format:\n"
+        "<code>PID[{field:value},{field:value}]</code>\n\n"
+        "Example:\n"
+        "<code>1[{email:user1@example.com,password:pass1},{email:user2@example.com,password:pass2}]</code>"
+    )
+
+
+def guide_edit_price():
+    return (
+        "<b>Edit Price</b>\n\n"
+        "Send product ID and new price.\n\n"
+        "Format:\n"
+        "<code>PID | Price</code>\n\n"
+        "Example:\n"
+        "<code>1 | 4.5</code>"
+    )
+
+
+def guide_edit_stock_count():
+    return (
+        "<b>Edit Stock Count</b>\n\n"
+        "This changes only the visible stock number. To edit credentials, use Edit Stock Details.\n\n"
+        "Format:\n"
+        "<code>PID | Stock</code>\n\n"
+        "Example:\n"
+        "<code>1 | 10</code>"
+    )
+
+
+def guide_add_balance():
+    return (
+        "<b>Add Balance</b>\n\n"
+        "Send user ID and amount to add to wallet.\n\n"
+        "Format:\n"
+        "<code>UID | Amt</code>\n\n"
+        "Example:\n"
+        "<code>123456789 | 5</code>"
+    )
+
+
+def guide_broadcast():
+    return (
+        "<b>Broadcast</b>\n\n"
+        "Send plain text. To include a custom emoji, write its ID like this:\n"
+        "<code>{[8887897]}</code>\n\n"
+        "Example:\n"
+        "<code>New stock is live {[8887897]}</code>"
+    )
+
+
+def guide_delete_product():
+    return (
+        "<b>Delete Product</b>\n\n"
+        "Send the product ID to delete.\n\n"
+        "Format:\n"
+        "<code>PID</code>\n\n"
+        "Example:\n"
+        "<code>1</code>"
+    )
+
+
+def guide_order_details():
+    return (
+        "<b>Order Details</b>\n\n"
+        "Send the order ID.\n\n"
+        "Format:\n"
+        "<code>ORDXXXXXXXX</code>"
+    )
+
+
+def guide_approve_withdrawal():
+    return (
+        "<b>Approve Withdrawal</b>\n\n"
+        "Send pending withdrawal ID.\n\n"
+        "Format:\n"
+        "<code>Withdrawal ID</code>\n\n"
+        "Example:\n"
+        "<code>1</code>"
+    )
+
+
+def guide_freebie_products():
+    return (
+        get_freebie_products_admin()
+        + "\n\nUse this format to toggle any product:\n"
+        + "`toggle_freebie | product_id`"
+    )
+
+
+def guide_freebie_stock():
+    return (
+        "<b>Freebie Stock</b>\n\n"
+        "Add stock only for products already marked as freebies.\n\n"
+        "Format:\n"
+        "<code>PID[{field:value},{field:value}]</code>\n\n"
+        "Example:\n"
+        "<code>1[{email:free1@example.com,password:pass1}]</code>"
+    )

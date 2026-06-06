@@ -1,4 +1,6 @@
 import uuid
+import re
+from html import escape as html_escape
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -96,6 +98,25 @@ def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
 
 
 # ─── USER KEYBOARDS ───────────────────────────────────────
+
+def render_custom_emoji_placeholders(text):
+    """
+    Broadcast helper: turns {[custom_emoji_id]} into Telegram HTML custom emoji.
+    Normal message text is escaped so admin can send plain text safely.
+    """
+    pattern = re.compile(r"\{\[(\d+)\]\}")
+    source = text or ""
+    rendered = []
+    last_index = 0
+
+    for match in pattern.finditer(source):
+        rendered.append(html_escape(source[last_index:match.start()]))
+        rendered.append(f'<tg-emoji emoji-id="{match.group(1)}">.</tg-emoji>')
+        last_index = match.end()
+
+    rendered.append(html_escape(source[last_index:]))
+    return "".join(rendered)
+
 
 def main_menu_keyboard():
     keyboard = [
@@ -230,6 +251,11 @@ def wallet_options_keyboard():
     return build_menu(buttons, n_cols=2, footer_buttons=[back_btn("Back", callback_data='main_menu')])
 
 
+def wallet_deposit_amount_keyboard():
+    buttons = [back_btn("Back", callback_data='wallet', style="danger")]
+    return build_menu(buttons, n_cols=1)
+
+
 def deposit_wallet_keyboard():
     buttons = [
         btn("I have sent the payment", callback_data='check_deposit_payment', style="success", emoji_id=EMOJIS["confirm"][0]),
@@ -286,6 +312,8 @@ def admin_main_keyboard():
         btn("Add Product", callback_data='admin_add_product', style="success", emoji_id=EMOJIS["deposit"][0]),
         btn("Bulk Products", callback_data='admin_bulk_add_products', style="success", emoji_id=EMOJIS["deposit"][0]),
         btn("Add Stock/Items", callback_data='admin_add_items', style="primary", emoji_id=EMOJIS["view_products"][0]),
+        btn("Edit Product Details", callback_data='admin_edit_product_details', style="primary", emoji_id=EMOJIS["view_products"][0]),
+        btn("Edit Stock Details", callback_data='admin_edit_stock_details', style="primary", emoji_id=EMOJIS["edit_stock"][0]),
         btn("Edit Price", callback_data='admin_edit_price', style="primary", emoji_id=EMOJIS["wallet"][0]),
         btn("Edit Stock", callback_data='admin_edit_stock', style="primary", emoji_id=EMOJIS["edit_stock"][0]),
         btn("Add Balance", callback_data='admin_add_balance', style="success", emoji_id=EMOJIS["deposit"][0]),
@@ -296,8 +324,8 @@ def admin_main_keyboard():
         btn("View Products", callback_data='admin_view_products', style="primary", emoji_id=EMOJIS["view_products"][0]),
         btn("All Orders", callback_data='admin_view_all_orders', style="primary", emoji_id=EMOJIS["order"][0]),
         btn("Withdrawals", callback_data='admin_withdraw_requests', style="danger", emoji_id=EMOJIS["withdraw"][0]),
-        btn("Freebies Settings", callback_data='admin_freebies_settings', style="success", emoji_id=EMOJIS["welcome_star"][0]),
         btn("Freebie Products", callback_data='admin_freebie_products', style="success", emoji_id=EMOJIS["products"][0]),
+        btn("Freebie Stock", callback_data='admin_freebie_stock', style="success", emoji_id=EMOJIS["view_products"][0]),
         btn("Stats", callback_data='admin_view_stats', style="success", emoji_id=EMOJIS["stats"][0]),
     ]
     return build_menu(buttons, n_cols=2)

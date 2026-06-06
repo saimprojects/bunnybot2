@@ -8,6 +8,7 @@ import random
 import string
 import urllib.request
 import urllib.error
+import urllib.parse
 from html import escape as html_escape
 import utils
 
@@ -81,6 +82,174 @@ def query_binance_pay_order(binance_order_id):
         return False, f"Binance API error: {e}"
 
 
+def build_binance_spot_signature(query_string):
+    return hmac.new(
+        config.BINANCE_API_SECRET.encode("utf-8"),
+        query_string.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+
+
+def signed_binance_get(path, params=None):
+    if not config.BINANCE_API_KEY or not config.BINANCE_API_SECRET:
+        return False, "Binance API key/secret missing."
+
+    params = dict(params or {})
+    params["timestamp"] = int(time.time() * 1000)
+    query_string = urllib.parse.urlencode(params)
+    signature = build_binance_spot_signature(query_string)
+    base_url = getattr(config, "BINANCE_API_BASE_URL", "https://api.binance.com").rstrip("/")
+    url = f"{base_url}{path}?{query_string}&signature={signature}"
+    headers = {"X-MBX-APIKEY": config.BINANCE_API_KEY}
+    request = urllib.request.Request(url, headers=headers, method="GET")
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            raw = response.read().decode("utf-8")
+            return True, json.loads(raw)
+    except urllib.error.HTTPError as e:
+        try:
+            error_body = e.read().decode("utf-8")
+        except Exception:
+            error_body = str(e)
+        return False, f"Binance HTTP error: {error_body}"
+    except Exception as e:
+        return False, f"Binance API error: {e}"
+
+
+def query_binance_pay_transactions():
+    lookback_days = int(getattr(config, "BINANCE_PAYMENT_LOOKBACK_DAYS", 30) or 30)
+    end_time = int(time.time() * 1000)
+    start_time = end_time - (lookback_days * 24 * 60 * 60 * 1000)
+    params = {
+        "startTime": start_time,
+        "endTime": end_time,
+        "limit": 100,
+    }
+    return signed_binance_get("/sapi/v1/pay/transactions", params)
+
+
+def iter_transaction_rows(payload):
+    if isinstance(payload, list):
+        return payload
+
+    if not isinstance(payload, dict):
+        return []
+
+    data = payload.get("data")
+    if isinstance(data, list):
+        return data
+
+    if isinstance(data, dict):
+        for key in ("rows", "list", "data", "transactions"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+
+    for key in ("rows", "list", "transactions"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+
+    return []
+
+
+def transaction_references(row):
+    keys = (
+        "transactionId",
+        "transactionID",
+        "transaction_id",
+        "txId",
+        "txID",
+        "orderId",
+        "orderID",
+        "merchantTradeNo",
+        "prepayId",
+        "referenceId",
+        "reference",
+        "refId",
+    )
+    refs = []
+    for key in keys:
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            refs.append(str(value).strip())
+    return refs
+
+
+def transaction_amount_and_currency(row, expected_currency):
+    expected_currency = str(expected_currency or "").upper()
+    funds_detail = row.get("fundsDetail") or row.get("funds") or []
+
+    if isinstance(funds_detail, list):
+        for fund in funds_detail:
+            if not isinstance(fund, dict):
+                continue
+            currency = str(fund.get("currency") or fund.get("asset") or "").upper()
+            if expected_currency and currency and currency != expected_currency:
+                continue
+            amount = fund.get("amount") or fund.get("qty") or fund.get("quantity")
+            if amount is not None:
+                return amount, currency or expected_currency
+
+    amount = (
+        row.get("amount")
+        or row.get("orderAmount")
+        or row.get("totalFee")
+        or row.get("transactAmount")
+        or row.get("quantity")
+    )
+    currency = (
+        row.get("currency")
+        or row.get("coin")
+        or row.get("asset")
+        or row.get("orderCurrency")
+        or expected_currency
+    )
+    return amount, str(currency or expected_currency).upper()
+
+
+def verify_binance_pay_history_reference(payment_reference, expected_amount):
+    ok, result = query_binance_pay_transactions()
+
+    if not ok:
+        return False, str(result)
+
+    reference = str(payment_reference).strip()
+    expected_currency = getattr(config, "BINANCE_PAYMENT_CURRENCY", "USDT")
+    rows = iter_transaction_rows(result)
+
+    if isinstance(result, dict) and result.get("success") is False:
+        return False, str(result.get("message") or result.get("msg") or result)
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if reference not in transaction_references(row):
+            continue
+
+        status = str(row.get("status") or row.get("orderStatus") or row.get("bizStatus") or "").upper()
+        if status and status not in {"SUCCESS", "COMPLETED", "PAID", "PAY_SUCCESS"}:
+            return False, f"Payment status is `{status}`."
+
+        amount_raw, currency = transaction_amount_and_currency(row, expected_currency)
+
+        if expected_currency and currency and currency.upper() != expected_currency.upper():
+            return False, f"Currency mismatch. Expected {expected_currency}, got {currency}."
+
+        try:
+            paid_amount = float(amount_raw)
+            expected = float(expected_amount)
+            if paid_amount + 1e-9 < expected:
+                return False, f"Paid amount {paid_amount} is less than required {expected}."
+        except Exception:
+            return False, "Payment amount could not be verified."
+
+        return True, "Payment verified successfully."
+
+    return False, "Payment reference not found in Binance Pay transaction history."
+
+
 def verify_binance_order_id(binance_order_id, expected_amount):
     ok, result = query_binance_pay_order(binance_order_id)
 
@@ -108,23 +277,92 @@ def verify_binance_order_id(binance_order_id, expected_amount):
     return True, "Payment verified successfully."
 
 
+def verify_binance_reference(payment_reference, expected_amount):
+    success, msg = verify_binance_pay_history_reference(payment_reference, expected_amount)
+    if success:
+        return True, msg
+
+    fallback_success, fallback_msg = verify_binance_order_id(payment_reference, expected_amount)
+    if fallback_success:
+        return True, fallback_msg
+
+    return False, f"{msg} Fallback check: {fallback_msg}"
+
+
 def process_binance_payment(user_id, order_id, product_id, quantity, total_amount, binance_order_id=None):
     if not binance_order_id:
-        return False, "Binance Order ID missing."
+        return False, "Binance payment reference missing."
 
-    print(f"[Binance] Verifying Binance Order ID {binance_order_id}, user {user_id}, amount {total_amount} USDT")
+    payment_reference = str(binance_order_id).strip()
 
-    success, msg = verify_binance_order_id(binance_order_id, total_amount)
+    if database.is_payment_reference_used(payment_reference):
+        return False, f"{ce('cancel')} <b>This payment reference is already used.</b>"
+
+    print(f"[Binance] Verifying Binance payment reference {payment_reference}, user {user_id}, amount {total_amount} USDT")
+
+    success, msg = verify_binance_reference(payment_reference, total_amount)
 
     if success:
+        recorded = database.record_verified_payment(
+            payment_reference,
+            user_id,
+            float(total_amount),
+            getattr(config, "BINANCE_PAYMENT_CURRENCY", "USDT"),
+            "Product Purchase",
+            order_id
+        )
+        if not recorded:
+            return False, f"{ce('cancel')} <b>This payment reference is already used.</b>"
         database.add_transaction(user_id, "Binance Purchase", -float(total_amount))
         return True, f"{ce('confirm')} Payment verified successfully."
 
     return False, (
         f"{ce('cancel')} <b>Payment not verified.</b>\n\n"
         f"Reason: {safe(msg)}\n\n"
-        f"Please check your Binance Order ID or contact support."
+        f"Please check your Transaction ID / Reference ID or contact support."
     )
+
+
+def process_wallet_deposit(user_id, amount, payment_reference):
+    if not payment_reference:
+        return False, "Binance payment reference missing."
+
+    payment_reference = str(payment_reference).strip()
+
+    try:
+        amount = float(amount)
+    except Exception:
+        return False, "Deposit amount is invalid."
+
+    if amount <= 0:
+        return False, "Deposit amount must be greater than 0."
+
+    if database.is_payment_reference_used(payment_reference):
+        return False, f"{ce('cancel')} <b>This payment reference is already used.</b>"
+
+    success, msg = verify_binance_reference(payment_reference, amount)
+
+    if not success:
+        return False, (
+            f"{ce('cancel')} <b>Payment not verified.</b>\n\n"
+            f"Reason: {safe(msg)}\n\n"
+            f"Please check your Transaction ID / Reference ID or contact support."
+        )
+
+    recorded = database.record_verified_payment(
+        payment_reference,
+        user_id,
+        amount,
+        getattr(config, "BINANCE_PAYMENT_CURRENCY", "USDT"),
+        "Wallet Deposit",
+        None
+    )
+    if not recorded:
+        return False, f"{ce('cancel')} <b>This payment reference is already used.</b>"
+
+    database.update_user_wallet(user_id, amount)
+    database.add_transaction(user_id, "Wallet Deposit (Binance)", amount)
+    return True, f"{ce('confirm')} Wallet deposit verified. Balance updated."
 
 
 def process_wallet_payment(user_id, order_id, product_id, quantity, total_amount):
@@ -157,7 +395,7 @@ def get_binance_payment_details(total_amount):
         f"{ce('diamond')} <b>Binance ID:</b>\n"
         f"<code>{safe(binance_id)}</code>\n\n"
         f"After sending payment, click the button below.\n"
-        f"Then send your <b>Binance Order ID / Transaction ID</b> for verification.\n\n"
+        f"Then send your <b>Transaction ID / Reference ID</b> for verification.\n\n"
         f"━━━━━━━━━━━━━━━━━━"
     )
 
