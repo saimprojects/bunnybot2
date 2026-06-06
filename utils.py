@@ -6,72 +6,76 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 EMOJIS = {
     # start
-    "products": ("5456140674028019486", "🛍️"),
-    "purchase_history": ("5210956306952758910", "📜"),
-    "welcome_star": ("5325547803936572038", "✨"),
-    "choose_option": ("5406745015365943482", "👇"),
+    "products": ("5456140674028019486", "."),
+    "purchase_history": ("5210956306952758910", "."),
+    "welcome_star": ("5325547803936572038", "."),
+    "choose_option": ("5406745015365943482", "."),
 
     # profile
-    "profile": ("5461117441612462242", "👤"),
-    "id": ("5427168083074628963", "🆔"),
-    "username": ("5260293700088511294", "📛"),
-    "date": ("5413879192267805083", "📅"),
-    "wallet": ("5409048419211682843", "💰"),
-    "box": ("5231012545799666522", "📦"),
-    "gift": ("5217822164362739968", "🎁"),
-    "link": ("5305265301917549162", "🔗"),
+    "profile": ("5461117441612462242", "."),
+    "id": ("5427168083074628963", "."),
+    "username": ("5260293700088511294", "."),
+    "date": ("5413879192267805083", "."),
+    "wallet": ("5409048419211682843", "."),
+    "box": ("5231012545799666522", "."),
+    "gift": ("5217822164362739968", "."),
+    "link": ("5305265301917549162", "."),
 
     # purchase history
-    "no_orders": ("5406683434124859552", "📭"),
-    "arrow": ("5416117059207572332", "👉"),
-    "back": ("5416117059207572332", "🔙"),
+    "no_orders": ("5406683434124859552", "."),
+    "arrow": ("5416117059207572332", "."),
+    "back": ("5416117059207572332", "."),
 
     # wallet
-    "diamond": ("5427168083074628963", "💎"),
-    "stats": ("5231200819986047254", "📊"),
-    "deposit": ("5397916757333654639", "💳"),
-    "withdraw": ("5402186569006210455", "💸"),
+    "diamond": ("5427168083074628963", "."),
+    "stats": ("5231200819986047254", "."),
+    "deposit": ("5397916757333654639", "."),
+    "withdraw": ("5402186569006210455", "."),
 
     # order details
-    "order_details": ("5231012545799666522", "🔎"),
+    "order_details": ("5231012545799666522", "."),
 
     # support
-    "support_center": ("5395695537687123235", "🆘"),
-    "support": ("5443038326535759644", "💬"),
-    "faq": ("5282843764451195532", "📖"),
-    "contact": ("5443038326535759644", "💬"),
-    "announcement": ("5424818078833715060", "🔔"),
-    "confirm": ("5206607081334906820", "✅"),
-    "cancel": ("5210952531676504517", "❌"),
-    "order": ("5406683434124859552", "🛒"),
-    "edit_stock": ("5451882707875276247", "📝"),
-    "delete": ("5445267414562389170", "🗑️"),
-    "broadcast": ("5424818078833715060", "📢"),
-    "view_products": ("5231012545799666522", "📦"),
-    "users": ("5461117441612462242", "👥"),
-    "question": ("5282843764451195532", "❓"),
-    "quantity": ("5231200819986047254", "🔢"),
-    "warning": ("5210952531676504517", "⚠️"),
-    "admin": ("5427168083074628963", "👑"),
-    "wallet_purse": ("5409048419211682843", "👛"),
-    "receipt": ("5406683434124859552", "🧾"),
-    "clipboard": ("5451882707875276247", "📋"),
-    "pin": ("5305265301917549162", "📍"),
-    "hourglass": ("5231200819986047254", "⏳"),
-    "puzzle": ("5231012545799666522", "🧩"),
+    "support_center": ("5395695537687123235", "."),
+    "support": ("5443038326535759644", "."),
+    "faq": ("5282843764451195532", "."),
+    "contact": ("5443038326535759644", "."),
+    "announcement": ("5424818078833715060", "."),
+    "confirm": ("5206607081334906820", "."),
+    "cancel": ("5210952531676504517", "."),
+    "order": ("5406683434124859552", "."),
+    "edit_stock": ("5451882707875276247", "."),
+    "delete": ("5445267414562389170", "."),
+    "broadcast": ("5424818078833715060", "."),
+    "view_products": ("5231012545799666522", "."),
+    "users": ("5461117441612462242", "."),
+    "question": ("5282843764451195532", "."),
+    "quantity": ("5231200819986047254", "."),
+    "warning": ("5210952531676504517", "."),
+    "admin": ("5427168083074628963", "."),
+    "wallet_purse": ("5409048419211682843", "."),
+    "receipt": ("5406683434124859552", "."),
+    "clipboard": ("5451882707875276247", "."),
+    "pin": ("5305265301917549162", "."),
+    "hourglass": ("5231200819986047254", "."),
+    "puzzle": ("5231012545799666522", "."),
 }
 
-DIVIDER = "━━━━━━━━━━━━━━━━━━"
+CUSTOM_EMOJI_PLACEHOLDER = "."
+DIVIDER = "------------------"
 
 
-def tg(emoji_id, fallback="."):
+def tg(emoji_id, fallback=None):
     emoji_id = str(emoji_id or "").strip()
-    fallback = "." if fallback is None else str(fallback)
 
     if not emoji_id or emoji_id.lower() == "none":
-        return html_escape(fallback)
+        return html_escape(str(fallback or ""))
 
-    return f'<tg-emoji emoji-id="{html_escape(emoji_id, quote=True)}">{html_escape(fallback)}</tg-emoji>'
+    return (
+        f'<tg-emoji emoji-id="{html_escape(emoji_id, quote=True)}">'
+        f'{CUSTOM_EMOJI_PLACEHOLDER}'
+        f'</tg-emoji>'
+    )
 
 
 def ce(name, fallback=None):
@@ -130,7 +134,7 @@ def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
     return InlineKeyboardMarkup(menu)
 
 
-# ─── USER KEYBOARDS ───────────────────────────────────────
+# USER KEYBOARDS
 
 def render_custom_emoji_placeholders(text):
     """
@@ -338,7 +342,7 @@ def product_update_purchase_keyboard(product, style="success"):
     return InlineKeyboardMarkup(keyboard)
 
 
-# ─── ADMIN KEYBOARDS ──────────────────────────────────────
+# ADMIN KEYBOARDS
 
 def admin_main_keyboard():
     buttons = [

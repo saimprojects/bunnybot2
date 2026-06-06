@@ -3,7 +3,7 @@ from html import escape as html_escape
 import utils
 
 
-def tg(emoji_id, fallback):
+def tg(emoji_id, fallback=None):
     return utils.tg(emoji_id, fallback)
 
 
@@ -21,7 +21,7 @@ def get_product_icon(emoji_id):
     Agar database mein empty/None hai to default product emoji use karega.
     """
     if emoji_id and str(emoji_id).strip() and str(emoji_id).strip().lower() != "none":
-        return tg(str(emoji_id).strip(), "📦")
+        return tg(str(emoji_id).strip())
 
     return ce('box')
 

@@ -13,7 +13,7 @@ from html import escape as html_escape
 import utils
 
 
-def tg(emoji_id, fallback):
+def tg(emoji_id, fallback=None):
     return utils.tg(emoji_id, fallback)
 
 

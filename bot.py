@@ -56,18 +56,18 @@ def ce(name: str, fallback: str = None) -> str:
 
 
 def build_start_message() -> str:
-    star = ce('welcome_star', '🌟')
-    diamond = ce('diamond', '💎')
-    stats = ce('stats', '📊')
-    products = ce('products', '⚡')
-    wallet = ce('wallet', '💲')
-    profile = ce('profile', '🙂')
-    support = ce('support', '🚨')
-    choose = ce('choose_option', '💎')
+    star = ce('welcome_star')
+    diamond = ce('diamond')
+    stats = ce('stats')
+    products = ce('products')
+    wallet = ce('wallet')
+    profile = ce('profile')
+    support = ce('support')
+    choose = ce('choose_option')
     return (
         f"{star} <b>Bunny Tools Premium</b> {star}\n\n"
         f"{diamond} <b>Premium Digital Products with Instant Delivery</b> {diamond}\n"
-        f"{stats} <b>Fast • Secure • Automated</b> {stats}\n\n"
+        f"{stats} <b>Fast - Secure - Automated</b> {stats}\n\n"
         f"{products} <b>Products</b>\n"
         f"{wallet} <b>Wallet</b>\n"
         f"{profile} <b>Profile</b>\n"
@@ -234,6 +234,17 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{utils.DIVIDER}\n"
             )
     await update.callback_query.edit_message_text(text, reply_markup=utils.main_menu_keyboard(), parse_mode='HTML')
+
+
+async def emoji_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not admin.is_admin(update.effective_user.id):
+        return
+
+    lines = ["<b>Custom Emoji Test</b>", ""]
+    for name, (emoji_id, _) in utils.EMOJIS.items():
+        lines.append(f"{ce(name)} <code>{html_escape(name)}</code> - <code>{html_escape(str(emoji_id))}</code>")
+
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
 # =============================================================================
@@ -814,6 +825,7 @@ def main():
                     parse_mode=ParseMode.HTML
                 ) if admin.is_admin(u.effective_user.id) else None
             ),
+            CommandHandler('emoji_test', emoji_test),
             CallbackQueryHandler(admin_button_handler, pattern='^admin_'),
             CallbackQueryHandler(button_handler),
         ],

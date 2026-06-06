@@ -75,7 +75,7 @@ def parse_product_block(block):
     if len(fields) != 6:
         raise ValueError(
             "Product format must have 6 fields: "
-            "Name | Duration | Price | Description | Note | Sticker Emoji ID"
+            "Name | Duration | Price | Description | Note | Custom Emoji ID"
         )
 
     return {
@@ -128,7 +128,7 @@ def get_product_detail_edit_guide(product):
         f"{ce('edit_stock')} <b>Edit Product Details</b>\n\n"
         "Change only the fields you want, but send the full line back in the same format.\n\n"
         "<b>Format:</b>\n"
-        "<code>Name | Duration | Price | Description | Note | Sticker Emoji ID</code>\n\n"
+        "<code>Name | Duration | Price | Description | Note | Custom Emoji ID</code>\n\n"
         "<b>Current:</b>\n"
         f"{html_code(current_format)}\n\n"
         "<b>Example:</b>\n"
@@ -220,7 +220,7 @@ def add_product_admin(name, duration, price, description, note, emoji_id):
         )
         return (
             f"{ce('confirm')} Product {html_bold(name)} added successfully "
-            f"with stock {html_code(0)} and sticker ID {html_code(emoji_id)}."
+            f"with stock {html_code(0)} and custom emoji ID {html_code(emoji_id)}."
         )
     except Exception as e:
         return f"{ce('cancel')} Error adding product: {html_escape(str(e))}"
@@ -332,7 +332,7 @@ def get_all_products_admin():
             f"{ce('date')} Duration: {html_escape(str(p[2]))}\n"
             f"{ce('wallet')} Price: {html_escape(str(p[3]))} USDT\n"
             f"{ce('box')} Stock: {html_escape(str(p[4]))} - {stock_status}\n"
-            f"{ce('puzzle')} Sticker ID: {html_code(p[9] if len(p) > 9 and p[9] else 'None')}\n"
+            f"{ce('puzzle')} Custom Emoji ID: {html_code(p[9] if len(p) > 9 and p[9] else 'None')}\n"
             f"{utils.DIVIDER}\n"
         )
 
@@ -548,7 +548,7 @@ def guide_add_product():
     return (
         f"{ce('deposit')} <b>Add Product</b>\n\n"
         "Send one product in this full format:\n"
-        "<code>Name | Duration | Price | Description | Note | Sticker Emoji ID</code>\n\n"
+        "<code>Name | Duration | Price | Description | Note | Custom Emoji ID</code>\n\n"
         "Example:\n"
         "<code>netflix | 1month | 3 | testing | testing | 1873678163871</code>"
     )
@@ -559,7 +559,7 @@ def guide_bulk_products():
         f"{ce('deposit')} <b>Bulk Products</b>\n\n"
         "Send each product inside square brackets.\n\n"
         "Format:\n"
-        "<code>[Name | Duration | Price | Description | Note | Sticker Emoji ID]</code>\n\n"
+        "<code>[Name | Duration | Price | Description | Note | Custom Emoji ID]</code>\n\n"
         "Example:\n"
         "<code>[netflix | 1month | 3 | testing | testing | 1873678163871][prime | 1month | 2 | testing | testing | 1873678163871]</code>"
     )
