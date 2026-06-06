@@ -3,6 +3,7 @@ import json
 import config
 import re
 from html import escape as html_escape
+import utils
 
 
 def is_admin(user_id):
@@ -104,6 +105,14 @@ def html_code(value):
     return f"<code>{html_escape(str(value))}</code>"
 
 
+def ce(name, fallback=None):
+    return utils.ce(name, fallback)
+
+
+def html_bold(value):
+    return f"<b>{html_escape(str(value))}</b>"
+
+
 def product_edit_format(product):
     if not product:
         return ""
@@ -116,7 +125,7 @@ def product_edit_format(product):
 def get_product_detail_edit_guide(product):
     current_format = product_edit_format(product)
     return (
-        "<b>Edit Product Details</b>\n\n"
+        f"{ce('edit_stock')} <b>Edit Product Details</b>\n\n"
         "Change only the fields you want, but send the full line back in the same format.\n\n"
         "<b>Format:</b>\n"
         "<code>Name | Duration | Price | Description | Note | Sticker Emoji ID</code>\n\n"
@@ -130,7 +139,7 @@ def get_product_detail_edit_guide(product):
 def edit_product_details_admin(product_id, block):
     product = database.get_product(product_id)
     if not product:
-        return "Product not found."
+        return f"{ce('cancel')} Product not found."
 
     parsed = parse_product_block(block)
     database.update_product_details(
@@ -142,7 +151,7 @@ def edit_product_details_admin(product_id, block):
         parsed["note"],
         parsed["emoji_id"]
     )
-    return f"Product ID {product_id} details updated successfully."
+    return f"{ce('confirm')} Product ID {html_code(product_id)} details updated successfully."
 
 
 def stock_edit_format(product_id, items):
@@ -167,7 +176,7 @@ def get_stock_detail_edit_guide(product_id):
         current_format = f"{product_id}[{{email:example,password:example}}]"
 
     return (
-        "<b>Edit Stock Details</b>\n\n"
+        f"{ce('edit_stock')} <b>Edit Stock Details</b>\n\n"
         "This edits only unsold stock items. Sold delivered items are not changed.\n"
         "Send the full updated stock block back after editing.\n\n"
         "<b>Format:</b>\n"
@@ -182,18 +191,18 @@ def get_stock_detail_edit_guide(product_id):
 def edit_stock_details_admin(product_id, text):
     sections = parse_stock_bulk_format(text)
     if len(sections) != 1:
-        return "Send one product stock block only."
+        return f"{ce('cancel')} Send one product stock block only."
 
     parsed_product_id, items = sections[0]
     if parsed_product_id != product_id:
-        return f"Product ID mismatch. Expected {product_id}, got {parsed_product_id}."
+        return f"{ce('cancel')} Product ID mismatch. Expected {html_code(product_id)}, got {html_code(parsed_product_id)}."
 
     product = database.get_product(product_id)
     if not product:
-        return "Product not found."
+        return f"{ce('cancel')} Product not found."
 
     inserted = database.replace_unsold_stock_items(product_id, items)
-    return f"Product ID {product_id} stock details updated. Unsold stock is now {inserted}."
+    return f"{ce('confirm')} Product ID {html_code(product_id)} stock details updated. Unsold stock is now {html_code(inserted)}."
 
 
 def add_product_admin(name, duration, price, description, note, emoji_id):
@@ -209,9 +218,12 @@ def add_product_admin(name, duration, price, description, note, emoji_id):
             note,
             emoji_id
         )
-        return f"✅ Product *{name}* added successfully with stock `0` and sticker ID `{emoji_id}`."
+        return (
+            f"{ce('confirm')} Product {html_bold(name)} added successfully "
+            f"with stock {html_code(0)} and sticker ID {html_code(emoji_id)}."
+        )
     except Exception as e:
-        return f"❌ Error adding product: {e}"
+        return f"{ce('cancel')} Error adding product: {html_escape(str(e))}"
 
 def add_bulk_products_admin(products_data):
     try:
@@ -231,21 +243,21 @@ def add_bulk_products_admin(products_data):
             )
             added_count += 1
 
-        return f"✅ Successfully added *{added_count}* products with stock `0`."
+        return f"{ce('confirm')} Successfully added {html_bold(added_count)} products with stock {html_code(0)}."
 
     except Exception as e:
-        return f"❌ Error adding bulk products: {e}"
+        return f"{ce('cancel')} Error adding bulk products: {html_escape(str(e))}"
 
 
 def add_stock_bulk_admin(stock_sections):
     try:
         total_added = 0
-        report = "📦 *Stock Add Report:*\n\n"
+        report = f"{ce('box')} <b>Stock Add Report:</b>\n\n"
 
         for product_id, items_data in stock_sections:
             product = database.get_product(product_id)
             if not product:
-                report += f"❌ Product ID `{product_id}` not found.\n"
+                report += f"{ce('cancel')} Product ID {html_code(product_id)} not found.\n"
                 continue
 
             added_count = 0
@@ -259,29 +271,29 @@ def add_stock_bulk_admin(stock_sections):
                 database.update_product_stock(product_id, added_count)
 
             total_added += added_count
-            report += f"✅ Product ID `{product_id}`: Added `{added_count}` items.\n"
+            report += f"{ce('confirm')} Product ID {html_code(product_id)}: Added {html_code(added_count)} items.\n"
 
-        report += f"\n━━━━━━━━━━━━━━━━━━\nTotal Added: *{total_added}*"
+        report += f"\n{utils.DIVIDER}\nTotal Added: {html_bold(total_added)}"
         return report
 
     except Exception as e:
-        return f"❌ Error adding stock: {e}"
+        return f"{ce('cancel')} Error adding stock: {html_escape(str(e))}"
 
 
 def add_freebie_stock_bulk_admin(stock_sections):
     try:
         total_added = 0
-        report = "*Freebie Stock Add Report:*\n\n"
+        report = f"{ce('gift')} <b>Freebie Stock Add Report:</b>\n\n"
 
         for product_id, items_data in stock_sections:
             product = database.get_product(product_id)
             if not product:
-                report += f"Product ID `{product_id}` not found.\n"
+                report += f"{ce('cancel')} Product ID {html_code(product_id)} not found.\n"
                 continue
 
             is_freebie = product[10] if len(product) > 10 else False
             if not is_freebie:
-                report += f"Product ID `{product_id}` is not marked as a freebie.\n"
+                report += f"{ce('cancel')} Product ID {html_code(product_id)} is not marked as a freebie.\n"
                 continue
 
             added_count = 0
@@ -294,34 +306,34 @@ def add_freebie_stock_bulk_admin(stock_sections):
                 database.update_product_stock(product_id, added_count)
 
             total_added += added_count
-            report += f"Product ID `{product_id}`: Added `{added_count}` freebie items.\n"
+            report += f"{ce('confirm')} Product ID {html_code(product_id)}: Added {html_code(added_count)} freebie items.\n"
 
-        report += f"\nTotal Added: *{total_added}*"
+        report += f"\nTotal Added: {html_bold(total_added)}"
         return report
 
     except Exception as e:
-        return f"Error adding freebie stock: {e}"
+        return f"{ce('cancel')} Error adding freebie stock: {html_escape(str(e))}"
 
 
 def get_all_products_admin():
     products = database.get_all_products()
 
     if not products:
-        return "No products in the database."
+        return f"{ce('no_orders')} No products in the database."
 
-    message = "📦 *All Products:*\n\n"
+    message = f"{ce('box')} <b>All Products:</b>\n\n"
 
     for p in products:
-        stock_status = "✅ In Stock" if p[4] > 0 else "❌ OUT OF STOCK"
+        stock_status = f"{ce('confirm')} In Stock" if p[4] > 0 else f"{ce('cancel')} OUT OF STOCK"
 
         message += (
-            f"🆔 ID: `{p[0]}`\n"
-            f"📦 Name: *{p[1]}*\n"
-            f"📅 Duration: {p[2]}\n"
-            f"💰 Price: {p[3]} USDT\n"
-            f"📦 Stock: {p[4]} — {stock_status}\n"
-            f"🧩 Sticker ID: `{p[9] if len(p) > 9 and p[9] else 'None'}`\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
+            f"{ce('id')} ID: {html_code(p[0])}\n"
+            f"{ce('box')} Name: {html_bold(p[1])}\n"
+            f"{ce('date')} Duration: {html_escape(str(p[2]))}\n"
+            f"{ce('wallet')} Price: {html_escape(str(p[3]))} USDT\n"
+            f"{ce('box')} Stock: {html_escape(str(p[4]))} - {stock_status}\n"
+            f"{ce('puzzle')} Sticker ID: {html_code(p[9] if len(p) > 9 and p[9] else 'None')}\n"
+            f"{utils.DIVIDER}\n"
         )
 
     return message
@@ -332,13 +344,13 @@ def edit_product_price(product_id, new_price):
         product = database.get_product(product_id)
 
         if not product:
-            return "❌ Product not found."
+            return f"{ce('cancel')} Product not found."
 
         database.set_product_price(product_id, new_price)
-        return f"✅ Price for product ID {product_id} updated to {new_price} USDT."
+        return f"{ce('confirm')} Price for product ID {html_code(product_id)} updated to {html_escape(str(new_price))} USDT."
 
     except Exception as e:
-        return f"❌ Error updating price: {e}"
+        return f"{ce('cancel')} Error updating price: {html_escape(str(e))}"
 
 
 def edit_product_stock(product_id, new_stock):
@@ -346,13 +358,13 @@ def edit_product_stock(product_id, new_stock):
         product = database.get_product(product_id)
 
         if not product:
-            return "❌ Product not found."
+            return f"{ce('cancel')} Product not found."
 
         database.set_product_stock(product_id, new_stock)
-        return f"✅ Stock for product ID {product_id} updated to {new_stock}."
+        return f"{ce('confirm')} Stock for product ID {html_code(product_id)} updated to {html_escape(str(new_stock))}."
 
     except Exception as e:
-        return f"❌ Error updating stock: {e}"
+        return f"{ce('cancel')} Error updating stock: {html_escape(str(e))}"
 
 
 def delete_product_admin(product_id):
@@ -360,37 +372,37 @@ def delete_product_admin(product_id):
         product = database.get_product(product_id)
 
         if not product:
-            return "❌ Product not found."
+            return f"{ce('cancel')} Product not found."
 
         database.delete_product(product_id)
-        return f"✅ Product *{product[1]}* deleted successfully."
+        return f"{ce('confirm')} Product {html_bold(product[1])} deleted successfully."
 
     except Exception as e:
-        return f"❌ Error deleting product: {e}"
+        return f"{ce('cancel')} Error deleting product: {html_escape(str(e))}"
 
 
 def get_all_orders_admin():
     orders = database.get_all_orders(limit=20)
 
     if not orders:
-        return "No orders found."
+        return f"{ce('no_orders')} No orders found."
 
-    message = "📝 *Recent Orders (last 20):*\n\n"
+    message = f"{ce('edit_stock')} <b>Recent Orders (last 20):</b>\n\n"
 
     for o in orders:
         product = database.get_product(o[2])
         product_name = product[1] if product else "Unknown"
 
         message += (
-            f"🧾 Order ID: `{o[0]}`\n"
-            f"👤 User ID: `{o[1]}`\n"
-            f"📦 Product: {product_name}\n"
-            f"🔢 Qty: {o[3]}\n"
-            f"💰 Amount: {o[4]} USDT\n"
-            f"💳 Method: {o[5]}\n"
-            f"✅ Status: {o[6]}\n"
-            f"📅 Date: {o[7]}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
+            f"{ce('receipt')} Order ID: {html_code(o[0])}\n"
+            f"{ce('profile')} User ID: {html_code(o[1])}\n"
+            f"{ce('box')} Product: {html_escape(str(product_name))}\n"
+            f"{ce('quantity')} Qty: {html_escape(str(o[3]))}\n"
+            f"{ce('wallet')} Amount: {html_escape(str(o[4]))} USDT\n"
+            f"{ce('deposit')} Method: {html_escape(str(o[5]))}\n"
+            f"{ce('confirm')} Status: {html_escape(str(o[6]))}\n"
+            f"{ce('date')} Date: {html_escape(str(o[7]))}\n"
+            f"{utils.DIVIDER}\n"
         )
 
     return message
@@ -401,34 +413,34 @@ def add_balance_admin(user_id, amount):
         user = database.get_user(user_id)
 
         if not user:
-            return "❌ User not found."
+            return f"{ce('cancel')} User not found."
 
         database.update_user_wallet(user_id, amount)
         database.add_transaction(user_id, "Deposit (Admin)", amount)
 
-        return f"✅ Added {amount} USDT to user `{user_id}` wallet."
+        return f"{ce('confirm')} Added {html_escape(str(amount))} USDT to user {html_code(user_id)} wallet."
 
     except Exception as e:
-        return f"❌ Error adding balance: {e}"
+        return f"{ce('cancel')} Error adding balance: {html_escape(str(e))}"
 
 
 def get_withdrawal_requests_admin():
     withdrawals = database.get_pending_withdrawals()
 
     if not withdrawals:
-        return "No pending withdrawal requests."
+        return f"{ce('no_orders')} No pending withdrawal requests."
 
-    message = "💸 *Pending Withdrawals:*\n\n"
+    message = f"{ce('withdraw')} <b>Pending Withdrawals:</b>\n\n"
 
     for req in withdrawals:
         message += (
-            f"🆔 Withdrawal ID: `{req[0]}`\n"
-            f"👤 User ID: `{req[1]}`\n"
-            f"💰 Amount: {req[2]} USDT\n"
-            f"📍 Address: `{req[3]}`\n"
-            f"⏳ Status: {req[4]}\n"
-            f"📅 Date: {req[5]}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
+            f"{ce('id')} Withdrawal ID: {html_code(req[0])}\n"
+            f"{ce('profile')} User ID: {html_code(req[1])}\n"
+            f"{ce('wallet')} Amount: {html_escape(str(req[2]))} USDT\n"
+            f"{ce('pin')} Address: {html_code(req[3])}\n"
+            f"{ce('hourglass')} Status: {html_escape(str(req[4]))}\n"
+            f"{ce('date')} Date: {html_escape(str(req[5]))}\n"
+            f"{utils.DIVIDER}\n"
         )
 
     return message
@@ -439,17 +451,17 @@ def approve_withdrawal_admin(withdrawal_id):
         withdrawal = database.get_withdrawal(withdrawal_id)
 
         if not withdrawal:
-            return "❌ Withdrawal request not found."
+            return f"{ce('cancel')} Withdrawal request not found."
 
         if withdrawal[4] != "Pending":
-            return f"⚠️ Withdrawal already marked as {withdrawal[4]}."
+            return f"{ce('warning')} Withdrawal already marked as {html_escape(str(withdrawal[4]))}."
 
         database.update_withdrawal_status(withdrawal_id, "Approved")
 
-        return f"✅ Withdrawal request `{withdrawal_id}` approved. Send funds manually."
+        return f"{ce('confirm')} Withdrawal request {html_code(withdrawal_id)} approved. Send funds manually."
 
     except Exception as e:
-        return f"❌ Error approving withdrawal: {e}"
+        return f"{ce('cancel')} Error approving withdrawal: {html_escape(str(e))}"
 
 
 def get_stats_admin():
@@ -483,58 +495,58 @@ def get_stats_admin():
     conn.close()
 
     return (
-        f"📊 *Bot Statistics:*\n\n"
-        f"👥 Total Users: {total_users}\n"
-        f"📦 Total Products: {total_products}\n"
-        f"📦 Product Stock Count: {total_stock}\n"
-        f"📋 Unsold Items Count: {total_unsold_items}\n"
-        f"🛒 Total Orders: {total_orders}\n"
-        f"💰 Total Revenue: {round(total_revenue, 2)} USDT\n"
-        f"👛 Users Wallet Balance: {round(total_wallet, 2)} USDT\n"
-        f"💸 Pending Withdrawals: {total_pending_withdrawals}\n"
+        f"{ce('stats')} <b>Bot Statistics:</b>\n\n"
+        f"{ce('users')} Total Users: {html_escape(str(total_users))}\n"
+        f"{ce('box')} Total Products: {html_escape(str(total_products))}\n"
+        f"{ce('box')} Product Stock Count: {html_escape(str(total_stock))}\n"
+        f"{ce('clipboard')} Unsold Items Count: {html_escape(str(total_unsold_items))}\n"
+        f"{ce('order')} Total Orders: {html_escape(str(total_orders))}\n"
+        f"{ce('wallet')} Total Revenue: {html_escape(str(round(total_revenue, 2)))} USDT\n"
+        f"{ce('wallet_purse')} Users Wallet Balance: {html_escape(str(round(total_wallet, 2)))} USDT\n"
+        f"{ce('withdraw')} Pending Withdrawals: {html_escape(str(total_pending_withdrawals))}\n"
     )
 
 def get_freebies_settings_admin():
     config_data = database.get_freebies_config()
-    status = "Enabled ✅" if config_data[3] else "Disabled ❌"
+    status = f"Enabled {ce('confirm')}" if config_data[3] else f"Disabled {ce('cancel')}"
     
     return (
-        f"🎁 *Freebies Settings*\n\n"
+        f"{ce('gift')} <b>Freebies Settings</b>\n\n"
         f"Status: {status}\n"
-        f"Channel ID: `{config_data[1]}`\n"
-        f"Channel Link: {config_data[2]}\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Channel ID: {html_code(config_data[1])}\n"
+        f"Channel Link: {html_escape(str(config_data[2]))}\n\n"
+        f"{utils.DIVIDER}\n"
         f"To update, send:\n"
-        f"`freebie_setup | channel_id | channel_link | enable/disable`"
+        f"{html_code('freebie_setup | channel_id | channel_link | enable/disable')}"
     )
 
 def get_freebie_products_admin():
     products = database.get_freebie_products()
     if not products:
-        return "No products are currently set as Freebies."
+        return f"{ce('no_orders')} No products are currently set as Freebies."
         
-    message = "🎁 *Freebie Products:*\n\n"
+    message = f"{ce('gift')} <b>Freebie Products:</b>\n\n"
     for p in products:
-        message += f"🆔 ID: `{p[0]}` | 📦 Name: *{p[1]}*\n"
+        message += f"{ce('id')} ID: {html_code(p[0])} | {ce('box')} Name: {html_bold(p[1])}\n"
     
-    message += "\nTo toggle a product as freebie, send:\n`toggle_freebie | product_id`"
+    message += f"\nTo toggle a product as freebie, send:\n{html_code('toggle_freebie | product_id')}"
     return message
 
 
 def toggle_product_freebie_admin(product_id):
     product = database.get_product(product_id)
     if not product:
-        return "Product not found."
+        return f"{ce('cancel')} Product not found."
 
     current = product[10] if len(product) > 10 else False
     database.toggle_product_freebie(product_id, not current)
     new_status = "enabled" if not current else "disabled"
-    return f"Freebie status for product ID {product_id} is now {new_status}."
+    return f"{ce('confirm')} Freebie status for product ID {html_code(product_id)} is now {html_bold(new_status)}."
 
 
 def guide_add_product():
     return (
-        "<b>Add Product</b>\n\n"
+        f"{ce('deposit')} <b>Add Product</b>\n\n"
         "Send one product in this full format:\n"
         "<code>Name | Duration | Price | Description | Note | Sticker Emoji ID</code>\n\n"
         "Example:\n"
@@ -544,7 +556,7 @@ def guide_add_product():
 
 def guide_bulk_products():
     return (
-        "<b>Bulk Products</b>\n\n"
+        f"{ce('deposit')} <b>Bulk Products</b>\n\n"
         "Send each product inside square brackets.\n\n"
         "Format:\n"
         "<code>[Name | Duration | Price | Description | Note | Sticker Emoji ID]</code>\n\n"
@@ -555,7 +567,7 @@ def guide_bulk_products():
 
 def guide_add_stock():
     return (
-        "<b>Add Stock/Items</b>\n\n"
+        f"{ce('box')} <b>Add Stock/Items</b>\n\n"
         "Send stock for one or more product IDs. Every item goes inside braces.\n\n"
         "Format:\n"
         "<code>PID[{field:value},{field:value}]</code>\n\n"
@@ -566,7 +578,7 @@ def guide_add_stock():
 
 def guide_edit_price():
     return (
-        "<b>Edit Price</b>\n\n"
+        f"{ce('wallet')} <b>Edit Price</b>\n\n"
         "Send product ID and new price.\n\n"
         "Format:\n"
         "<code>PID | Price</code>\n\n"
@@ -577,7 +589,7 @@ def guide_edit_price():
 
 def guide_edit_stock_count():
     return (
-        "<b>Edit Stock Count</b>\n\n"
+        f"{ce('edit_stock')} <b>Edit Stock Count</b>\n\n"
         "This changes only the visible stock number. To edit credentials, use Edit Stock Details.\n\n"
         "Format:\n"
         "<code>PID | Stock</code>\n\n"
@@ -588,7 +600,7 @@ def guide_edit_stock_count():
 
 def guide_add_balance():
     return (
-        "<b>Add Balance</b>\n\n"
+        f"{ce('wallet')} <b>Add Balance</b>\n\n"
         "Send user ID and amount to add to wallet.\n\n"
         "Format:\n"
         "<code>UID | Amt</code>\n\n"
@@ -599,7 +611,7 @@ def guide_add_balance():
 
 def guide_broadcast():
     return (
-        "<b>Broadcast</b>\n\n"
+        f"{ce('broadcast')} <b>Broadcast</b>\n\n"
         "Send plain text. To include a custom emoji, write its ID like this:\n"
         "<code>{[8887897]}</code>\n\n"
         "Example:\n"
@@ -609,7 +621,7 @@ def guide_broadcast():
 
 def guide_delete_product():
     return (
-        "<b>Delete Product</b>\n\n"
+        f"{ce('delete')} <b>Delete Product</b>\n\n"
         "Send the product ID to delete.\n\n"
         "Format:\n"
         "<code>PID</code>\n\n"
@@ -620,7 +632,7 @@ def guide_delete_product():
 
 def guide_order_details():
     return (
-        "<b>Order Details</b>\n\n"
+        f"{ce('order_details')} <b>Order Details</b>\n\n"
         "Send the order ID.\n\n"
         "Format:\n"
         "<code>ORDXXXXXXXX</code>"
@@ -629,7 +641,7 @@ def guide_order_details():
 
 def guide_approve_withdrawal():
     return (
-        "<b>Approve Withdrawal</b>\n\n"
+        f"{ce('withdraw')} <b>Approve Withdrawal</b>\n\n"
         "Send pending withdrawal ID.\n\n"
         "Format:\n"
         "<code>Withdrawal ID</code>\n\n"
@@ -642,13 +654,13 @@ def guide_freebie_products():
     return (
         get_freebie_products_admin()
         + "\n\nUse this format to toggle any product:\n"
-        + "`toggle_freebie | product_id`"
+        + html_code("toggle_freebie | product_id")
     )
 
 
 def guide_freebie_stock():
     return (
-        "<b>Freebie Stock</b>\n\n"
+        f"{ce('gift')} <b>Freebie Stock</b>\n\n"
         "Add stock only for products already marked as freebies.\n\n"
         "Format:\n"
         "<code>PID[{field:value},{field:value}]</code>\n\n"

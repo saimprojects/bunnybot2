@@ -14,14 +14,11 @@ import utils
 
 
 def tg(emoji_id, fallback):
-    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+    return utils.tg(emoji_id, fallback)
 
 
 def ce(name):
-    emoji_data = utils.EMOJIS.get(name)
-    if not emoji_data: return ""
-    eid, fb = emoji_data
-    return tg(eid, fb) if eid else fb
+    return utils.ce(name)
 
 
 def safe(value):
@@ -396,7 +393,7 @@ def get_binance_payment_details(total_amount):
         f"<code>{safe(binance_id)}</code>\n\n"
         f"After sending payment, click the button below.\n"
         f"Then send your <b>Transaction ID / Reference ID</b> for verification.\n\n"
-        f"━━━━━━━━━━━━━━━━━━"
+        f"{utils.DIVIDER}"
     )
 
 
@@ -413,9 +410,9 @@ def get_wallet_payment_summary(user_id, total_amount):
     )
 
     return (
-        f"👛 <b>Wallet Payment</b>\n\n"
+        f"{ce('wallet_purse')} <b>Wallet Payment</b>\n\n"
         f"Your Balance: <b>{safe(current_balance)} USDT</b>\n"
         f"Total Amount: <b>{safe(total_amount)} USDT</b>\n\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"{utils.DIVIDER}\n\n"
         f"Balance Status: <b>{status}</b>"
     )

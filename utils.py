@@ -48,7 +48,40 @@ EMOJIS = {
     "delete": ("5445267414562389170", "🗑️"),
     "broadcast": ("5424818078833715060", "📢"),
     "view_products": ("5231012545799666522", "📦"),
+    "users": ("5461117441612462242", "👥"),
+    "question": ("5282843764451195532", "❓"),
+    "quantity": ("5231200819986047254", "🔢"),
+    "warning": ("5210952531676504517", "⚠️"),
+    "admin": ("5427168083074628963", "👑"),
+    "wallet_purse": ("5409048419211682843", "👛"),
+    "receipt": ("5406683434124859552", "🧾"),
+    "clipboard": ("5451882707875276247", "📋"),
+    "pin": ("5305265301917549162", "📍"),
+    "hourglass": ("5231200819986047254", "⏳"),
+    "puzzle": ("5231012545799666522", "🧩"),
 }
+
+DIVIDER = "━━━━━━━━━━━━━━━━━━"
+
+
+def tg(emoji_id, fallback="."):
+    emoji_id = str(emoji_id or "").strip()
+    fallback = "." if fallback is None else str(fallback)
+
+    if not emoji_id or emoji_id.lower() == "none":
+        return html_escape(fallback)
+
+    return f'<tg-emoji emoji-id="{html_escape(emoji_id, quote=True)}">{html_escape(fallback)}</tg-emoji>'
+
+
+def ce(name, fallback=None):
+    emoji_data = EMOJIS.get(name)
+    if not emoji_data:
+        return html_escape(str(fallback or ""))
+
+    emoji_id, default_fallback = emoji_data
+    return tg(emoji_id, default_fallback if fallback is None else fallback)
+
 
 def generate_order_id():
     return "ORD" + str(uuid.uuid4())[:8].upper()
@@ -111,7 +144,7 @@ def render_custom_emoji_placeholders(text):
 
     for match in pattern.finditer(source):
         rendered.append(html_escape(source[last_index:match.start()]))
-        rendered.append(f'<tg-emoji emoji-id="{match.group(1)}">.</tg-emoji>')
+        rendered.append(tg(match.group(1), "."))
         last_index = match.end()
 
     rendered.append(html_escape(source[last_index:]))
@@ -208,7 +241,7 @@ def quantity_selection_keyboard():
 
 def payment_method_keyboard():
     buttons = [
-        btn("💳 Pay with Binance", callback_data='pay_binance', style="primary"),
+        btn("Pay with Binance", callback_data='pay_binance', style="primary", emoji_id=EMOJIS["deposit"][0]),
         btn("Pay with Wallet", callback_data='pay_wallet', style="success", emoji_id=EMOJIS["wallet"][0]),
         back_btn("Back to Quantity", callback_data='back_to_quantity', style="danger"),
     ]
@@ -335,7 +368,7 @@ def freebies_keyboard(products, config_data):
     
     # Add join channel button if link is provided
     if config_data[2]:
-        buttons.append(btn("Join Channel 📢", url=config_data[2], style="success", emoji_id=EMOJIS["announcement"][0]))
+        buttons.append(btn("Join Channel", url=config_data[2], style="success", emoji_id=EMOJIS["announcement"][0]))
         
     for p in products:
         product_id = p[0]

@@ -4,14 +4,11 @@ import utils
 
 
 def tg(emoji_id, fallback):
-    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+    return utils.tg(emoji_id, fallback)
 
 
 def ce(name):
-    emoji_data = utils.EMOJIS.get(name)
-    if not emoji_data: return ""
-    eid, fb = emoji_data
-    return tg(eid, fb) if eid else fb
+    return utils.ce(name)
 
 
 def safe(value):
@@ -64,10 +61,10 @@ def get_product_details_message(product_id):
         f"{ce('faq')} <b>Description:</b>\n"
         f"{safe(description)}\n\n"
 
-        f"⚠️ <b>Note:</b>\n"
+        f"{ce('warning')} <b>Note:</b>\n"
         f"{safe(note)}\n\n"
 
-        f"━━━━━━━━━━━━━━━━━━"
+        f"{utils.DIVIDER}"
     )
 
     return message
