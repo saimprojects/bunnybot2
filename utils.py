@@ -387,6 +387,7 @@ def admin_main_keyboard():
         btn("View Products", callback_data='admin_view_products', style="primary", emoji_id=EMOJIS["view_products"][0]),
         btn("All Orders", callback_data='admin_view_all_orders', style="primary", emoji_id=EMOJIS["order"][0]),
         btn("Withdrawals", callback_data='admin_withdraw_requests', style="danger", emoji_id=EMOJIS["withdraw"][0]),
+        btn("Add Freebie Product", callback_data='admin_add_freebie_product', style="success", emoji_id=EMOJIS["gift"][0]),
         btn("Freebie Products", callback_data='admin_freebie_products', style="success", emoji_id=EMOJIS["products"][0]),
         btn("Freebie Stock", callback_data='admin_freebie_stock', style="success", emoji_id=EMOJIS["view_products"][0]),
         btn("Stats", callback_data='admin_view_stats', style="success", emoji_id=EMOJIS["stats"][0]),

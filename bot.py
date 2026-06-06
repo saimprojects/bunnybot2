@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
     ORDER_DETAILS,
     ADMIN_ORDER_DETAILS,
     ADMIN_ADD_PRODUCT,
+    ADMIN_ADD_FREEBIE_PRODUCT,
     ADMIN_BULK_ADD_PRODUCTS,
     ADMIN_ADD_ITEMS,
     ADMIN_EDIT_PRICE,
@@ -48,7 +49,7 @@ logger = logging.getLogger(__name__)
     ADMIN_SETUP_FREEBIES,
     ADMIN_TOGGLE_FREEBIE,
     ADMIN_FREEBIE_STOCK,
-) = range(22)
+) = range(23)
 
 
 def ce(name: str, fallback: str = None) -> str:
@@ -358,7 +359,11 @@ async def emoji_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
         (
             "<b>Direct Entity Result</b>\n"
             f"Entities requested: <code>{len(direct_entities)}</code>\n"
-            f"Entities accepted: <code>{len(direct_rendered_ids)}</code>"
+            f"Entities accepted: <code>{len(direct_rendered_ids)}</code>\n\n"
+            "If accepted is 0, Telegram rejected custom emoji entities for this bot. "
+            "The Bot API allows them only for eligible bots: the bot owner must have "
+            "Telegram Premium for private/group/supergroup messages, or the bot must "
+            "have an additional username purchased on Fragment."
         ),
         parse_mode=ParseMode.HTML
     )
@@ -552,6 +557,9 @@ async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     elif data == 'admin_add_product':
         await query.edit_message_text(admin.guide_add_product(), reply_markup=utils.admin_cancel_keyboard(), parse_mode='HTML')
         return ADMIN_ADD_PRODUCT
+    elif data == 'admin_add_freebie_product':
+        await query.edit_message_text(admin.guide_add_freebie_product(), reply_markup=utils.admin_cancel_keyboard(), parse_mode='HTML')
+        return ADMIN_ADD_FREEBIE_PRODUCT
     elif data == 'admin_bulk_add_products':
         await query.edit_message_text(admin.guide_bulk_products(), reply_markup=utils.admin_cancel_keyboard(), parse_mode='HTML')
         return ADMIN_BULK_ADD_PRODUCTS
@@ -722,6 +730,27 @@ async def h_admin_add_p(u, c):
         d = admin.parse_product_block(u.message.text)
         r = admin.add_product_admin(d['name'], d['duration'], d['price'], d['description'], d['note'], d['emoji_id'])
         await u.message.reply_text(r, reply_markup=utils.admin_main_keyboard(), parse_mode=ParseMode.HTML)
+    except Exception as e:
+        await u.message.reply_text(f"{ce('cancel')} {html_escape(str(e))}", parse_mode=ParseMode.HTML)
+    return ConversationHandler.END
+
+
+async def h_admin_add_freebie_p(u, c):
+    try:
+        d = admin.parse_product_block(u.message.text)
+        r = admin.add_freebie_product_admin(
+            d['name'],
+            d['duration'],
+            d['price'],
+            d['description'],
+            d['note'],
+            d['emoji_id']
+        )
+        await u.message.reply_text(
+            f"{r}\n\nUse <b>Freebie Stock</b> to add claimable items for this product.",
+            reply_markup=utils.admin_main_keyboard(),
+            parse_mode=ParseMode.HTML
+        )
     except Exception as e:
         await u.message.reply_text(f"{ce('cancel')} {html_escape(str(e))}", parse_mode=ParseMode.HTML)
     return ConversationHandler.END
@@ -954,6 +983,7 @@ def main():
             WALLET_DEPOSIT_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_wallet_deposit_amount)],
             ADMIN_ORDER_DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, h_admin_order_d)],
             ADMIN_ADD_PRODUCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, h_admin_add_p)],
+            ADMIN_ADD_FREEBIE_PRODUCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, h_admin_add_freebie_p)],
             ADMIN_BULK_ADD_PRODUCTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, h_admin_bulk_p)],
             ADMIN_ADD_ITEMS: [MessageHandler(filters.TEXT & ~filters.COMMAND, h_admin_add_i)],
             ADMIN_EDIT_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, h_admin_edit_p)],

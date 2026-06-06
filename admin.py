@@ -205,7 +205,7 @@ def edit_stock_details_admin(product_id, text):
     return f"{ce('confirm')} Product ID {html_code(product_id)} stock details updated. Unsold stock is now {html_code(inserted)}."
 
 
-def add_product_admin(name, duration, price, description, note, emoji_id):
+def add_product_admin(name, duration, price, description, note, emoji_id, is_freebie=False):
     try:
         database.add_product(
             name,
@@ -216,14 +216,28 @@ def add_product_admin(name, duration, price, description, note, emoji_id):
             description,
             [],         # features default, hidden
             note,
-            emoji_id
+            emoji_id,
+            is_freebie=is_freebie
         )
+        product_type = "Freebie product" if is_freebie else "Product"
         return (
-            f"{ce('confirm')} Product {html_bold(name)} added successfully "
+            f"{ce('confirm')} {product_type} {html_bold(name)} added successfully "
             f"with stock {html_code(0)} and custom emoji ID {html_code(emoji_id)}."
         )
     except Exception as e:
         return f"{ce('cancel')} Error adding product: {html_escape(str(e))}"
+
+
+def add_freebie_product_admin(name, duration, price, description, note, emoji_id):
+    return add_product_admin(
+        name,
+        duration,
+        price,
+        description,
+        note,
+        emoji_id,
+        is_freebie=True
+    )
 
 def add_bulk_products_admin(products_data):
     try:
@@ -551,6 +565,17 @@ def guide_add_product():
         "<code>Name | Duration | Price | Description | Note | Custom Emoji ID</code>\n\n"
         "Example:\n"
         "<code>netflix | 1month | 3 | testing | testing | 1873678163871</code>"
+    )
+
+
+def guide_add_freebie_product():
+    return (
+        f"{ce('gift')} <b>Add Freebie Product</b>\n\n"
+        "Send one freebie product in this full format:\n"
+        "<code>Name | Duration | Price | Description | Note | Custom Emoji ID</code>\n\n"
+        "Recommended price is 0 for freebies.\n\n"
+        "Example:\n"
+        "<code>netflix free | 1month | 0 | free account | join channel first | 1873678163871</code>"
     )
 
 
