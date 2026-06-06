@@ -3,7 +3,7 @@ import datetime
 import json
 import re
 from html import escape as html_escape
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity
 from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
@@ -325,6 +325,43 @@ async def emoji_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     await update.message.reply_text("\n".join(report), parse_mode=ParseMode.HTML)
+
+    direct_text = "Direct Custom Emoji Entity Test\n\n"
+    direct_entities = []
+    direct_offset = len(direct_text)
+
+    for name, (emoji_id, fallback) in utils.EMOJIS.items():
+        emoji_id = str(emoji_id)
+        alt = utils.CUSTOM_EMOJI_ALTS.get(emoji_id) or fallback or utils.DEFAULT_CUSTOM_EMOJI_FALLBACK
+        line = f"{alt} {name} - {emoji_id}\n"
+        direct_entities.append(
+            MessageEntity(
+                type=MessageEntity.CUSTOM_EMOJI,
+                offset=direct_offset,
+                length=len(alt),
+                custom_emoji_id=emoji_id,
+            )
+        )
+        direct_text += line
+        direct_offset += len(line)
+
+    direct_entities = MessageEntity.adjust_message_entities_to_utf_16(direct_text, direct_entities)
+    direct_sent = await update.message.reply_text(direct_text, entities=direct_entities)
+
+    direct_rendered_ids = set()
+    for entity in direct_sent.entities or []:
+        entity_type = str(getattr(entity, "type", "")).lower()
+        if entity_type == "custom_emoji" or entity_type.endswith("custom_emoji"):
+            direct_rendered_ids.add(str(getattr(entity, "custom_emoji_id", "") or ""))
+
+    await update.message.reply_text(
+        (
+            "<b>Direct Entity Result</b>\n"
+            f"Entities requested: <code>{len(direct_entities)}</code>\n"
+            f"Entities accepted: <code>{len(direct_rendered_ids)}</code>"
+        ),
+        parse_mode=ParseMode.HTML
+    )
 
 
 # =============================================================================
