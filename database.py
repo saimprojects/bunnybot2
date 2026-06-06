@@ -157,6 +157,7 @@ def init_db():
 
     # Products marked as freebies
     cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_freebie BOOLEAN DEFAULT FALSE")
+    cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE")
 
     conn.commit()
     conn.close()
@@ -215,12 +216,20 @@ def add_product(name, duration, price, stock, rating, description, features, not
 def get_all_products():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM products ORDER BY id DESC')
+    cursor.execute('SELECT * FROM products WHERE COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC')
     products = cursor.fetchall()
     conn.close()
     return products
 
 def get_product(product_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM products WHERE id = %s AND COALESCE(is_deleted, FALSE) = FALSE', (product_id,))
+    product = cursor.fetchone()
+    conn.close()
+    return product
+
+def get_product_any(product_id):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM products WHERE id = %s', (product_id,))
@@ -271,8 +280,11 @@ def update_product_details(product_id, name, duration, price, description, note,
 def delete_product(product_id):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM unsold_items WHERE product_id = %s', (product_id,))
-    cursor.execute('DELETE FROM products WHERE id = %s', (product_id,))
+    cursor.execute('DELETE FROM unsold_items WHERE product_id = %s AND is_sold = 0', (product_id,))
+    cursor.execute(
+        'UPDATE products SET is_deleted = TRUE, stock = 0 WHERE id = %s',
+        (product_id,)
+    )
     conn.commit()
     conn.close()
 
@@ -557,7 +569,9 @@ def update_freebies_config(channel_id, channel_link, is_enabled):
 def get_freebie_products():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM products WHERE is_freebie = TRUE ORDER BY id DESC')
+    cursor.execute(
+        'SELECT * FROM products WHERE is_freebie = TRUE AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC'
+    )
     products = cursor.fetchall()
     conn.close()
     return products

@@ -389,7 +389,10 @@ def delete_product_admin(product_id):
             return f"{ce('cancel')} Product not found."
 
         database.delete_product(product_id)
-        return f"{ce('confirm')} Product {html_bold(product[1])} deleted successfully."
+        return (
+            f"{ce('confirm')} Product {html_bold(product[1])} removed successfully.\n\n"
+            "Old orders are kept safe, and unsold stock for this product was removed."
+        )
 
     except Exception as e:
         return f"{ce('cancel')} Error deleting product: {html_escape(str(e))}"
@@ -404,7 +407,7 @@ def get_all_orders_admin():
     message = f"{ce('edit_stock')} <b>Recent Orders (last 20):</b>\n\n"
 
     for o in orders:
-        product = database.get_product(o[2])
+        product = database.get_product_any(o[2])
         product_name = product[1] if product else "Unknown"
 
         message += (

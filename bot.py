@@ -274,7 +274,7 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text = f"{ce('order_details')} <b>Purchase History</b>\n\n"
         for o in orders[:10]:
-            p = database.get_product(o[2])
+            p = database.get_product_any(o[2])
             text += (
                 f"<b>Order #{o[0]}</b>\n"
                 f"{html_escape(p[1] if p else 'N/A')}\n"
@@ -642,7 +642,7 @@ async def handle_order_details(update: Update, context: ContextTypes.DEFAULT_TYP
     if not o:
         await update.message.reply_text(f"{ce('cancel')} Not found.", parse_mode=ParseMode.HTML)
         return ConversationHandler.END
-    p = database.get_product(o[2])
+    p = database.get_product_any(o[2])
     text = (
         f"{ce('order_details')} <b>Order</b>\n\n"
         f"ID: <code>{o[0]}</code>\n"
@@ -945,7 +945,7 @@ async def h_admin_order_d(u, c):
     if not o:
         await u.message.reply_text(f"{ce('cancel')} Not found.", parse_mode=ParseMode.HTML)
         return ConversationHandler.END
-    p = database.get_product(o[2])
+    p = database.get_product_any(o[2])
     text = (
         f"{ce('order_details')} <b>Admin Order</b>\n\n"
         f"ID: <code>{o[0]}</code>\n"
